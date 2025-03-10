@@ -18,6 +18,7 @@ use onetagger_platforms::spotify::Spotify;
 use onetagger_player::{AudioSources, AudioPlayer};
 use onetagger_shared::{Settings, COMMIT};
 use onetagger_playlist::{UIPlaylist, PLAYLIST_EXTENSIONS, get_files_from_playlist_file};
+use onetagger_shared::songsdownloader::{AnalyzeSongsRequest, DownloadSongsRequest, analyze_songs, download_songs};
 
 use crate::StartContext;
 use crate::quicktag::{QuickTag, QuickTagFile, QuickTagData};
@@ -79,6 +80,10 @@ enum Action {
 
     ManualTag { config: TaggerConfig, path: PathBuf },
     ManualTagApply { matches: Vec<TrackMatch>, path: PathBuf, config: TaggerConfig },
+
+    // Add new actions for songs downloader
+    AnalyzeSongs(AnalyzeSongsRequest),
+    DownloadSongs(DownloadSongsRequest),
 }
 
 
@@ -662,8 +667,21 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
             };
         },
 
-        
-        
+        // Handle songs downloader actions
+        Action::AnalyzeSongs(request) => {
+            let songs = analyze_songs(request).await?;
+            send_socket(websocket, json!({
+                "action": "analyzeSongs",
+                "songs": songs
+            })).await?;
+        },
+        Action::DownloadSongs(request) => {
+            download_songs(request).await?;
+            send_socket(websocket, json!({
+                "action": "downloadSongs",
+                "success": true
+            })).await?;
+        },
     }
    
     Ok(())

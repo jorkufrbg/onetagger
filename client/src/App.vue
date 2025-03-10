@@ -14,11 +14,15 @@
                             <q-route-tab :disable="$1t.lock.value.locked" to="/" class="text-weight-bolder" @click="hideSide">
                                 <q-icon name="mdi-home" size="sm"></q-icon>
                             </q-route-tab>
-                            <q-route-tab :disable="$1t.lock.value.locked" to="/autotagger" class="text-weight-bolder" @click="hideSide" >Auto tag</q-route-tab >
-                            <q-route-tab :disable="$1t.lock.value.locked" to="/audiofeatures" class="text-weight-bolder" @click="audioFeatures" >Audio features</q-route-tab >
-                            <q-route-tab :disable="$1t.lock.value.locked" to="/quicktag" class="text-weight-bolder" @click="showSide" >Quick Tag</q-route-tab >
-                            <q-route-tab :disable="$1t.lock.value.locked" to="/tageditor" class="text-weight-bolder" @click="hideSide" >Edit Tags</q-route-tab >
-                            <q-route-tab :disable="$1t.lock.value.locked" to="/renamer" class="text-weight-bolder" @click="hideSide" >Auto Rename</q-route-tab>
+                            <q-route-tab :disable="$1t.lock.value.locked" to="/songsdownloader" class="text-weight-bolder" @click="hideSide">
+                                <q-icon name="mdi-download-circle" size="sm" class="q-mr-xs"></q-icon>
+                                Songs Downloader
+                            </q-route-tab>
+                            <q-route-tab :disable="$1t.lock.value.locked" to="/autotagger" class="text-weight-bolder" @click="hideSide">Auto tag</q-route-tab>
+                            <q-route-tab :disable="$1t.lock.value.locked" to="/audiofeatures" class="text-weight-bolder" @click="audioFeatures">Audio features</q-route-tab>
+                            <q-route-tab :disable="$1t.lock.value.locked" to="/quicktag" class="text-weight-bolder" @click="showSide">Quick Tag</q-route-tab>
+                            <q-route-tab :disable="$1t.lock.value.locked" to="/tageditor" class="text-weight-bolder" @click="hideSide">Edit Tags</q-route-tab>
+                            <q-route-tab :disable="$1t.lock.value.locked" to="/renamer" class="text-weight-bolder" @click="hideSide">Auto Rename</q-route-tab>
                         </q-tabs>
                     </div>
 

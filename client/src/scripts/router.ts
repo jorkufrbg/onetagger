@@ -9,6 +9,7 @@ const AutotaggerStatus = () => import('../views/AutotaggerStatus.vue');
 const Autotagger = () => import('../views/Autotagger.vue');
 const QuickTag = () => import('../views/QuickTag.vue');
 const AudioFeatures = () => import('../views/AudioFeatures.vue');
+const SongsDownloader = () => import('../views/SongsDownloader.vue');
 
 const history = createWebHashHistory();
 
@@ -44,6 +45,10 @@ const routes = [
     {
         path: '/renamer',
         component: Renamer
+    },
+    {
+        path: '/songsdownloader',
+        component: SongsDownloader
     }
 ];
 

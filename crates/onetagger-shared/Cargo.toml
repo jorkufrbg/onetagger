@@ -17,3 +17,5 @@ lazy_static = "1.5"
 
 fern = { version = "0.6", features = ["colored"] }
 serde = { version = "1.0", features = ["derive"] }
+youtube_dl = "0.9"
+tokio = { version = "1.0", features = ["full"] }
