@@ -20,21 +20,22 @@
             </div>
         </div>
     
-        <!-- Output Directory -->
-        <div class='text-subtitle2 text-bold text-primary q-mt-xl'>SELECT OUTPUT DIRECTORY</div>
-        <div class='text-subtitle2 q-mb-md text-grey-6'>Select where to save downloaded songs</div>
+        <!-- Output Directory -->        
+        <div class='text-subtitle2 text-bold text-primary q-mt-lg'>SELECT OUTPUT DIRECTORY</div>
+        <div class='text-subtitle2 q-mb-md text-grey-6'>
+            Select where to save downloaded songs, copy/paste path directly or
+            <span class='q-px-sm text-caption text-bold click-highlight'>CLICK</span> the 
+            <q-icon name='mdi-open-in-app'></q-icon> 
+            icon to browse
+        </div>
         <div class='row justify-center input' style='max-width: 725px; margin: auto;'>
             <div class='col-1'></div>
-            <q-input 
-                filled 
-                class='col-10' 
-                label='Output Directory' 
-                v-model='outputPath'
-            >
+            <q-input filled class='col-10' label='Path' v-model='config.path'>
                 <template v-slot:append>
-                    <q-btn round dense flat icon='mdi-open-in-app' class='text-grey-4' @click='browseOutput'></q-btn>
+                    <q-btn round dense flat icon='mdi-open-in-app' class='text-grey-4' @click='browse'></q-btn>
                 </template>
             </q-input>
+
             <div class='col-1'>
                 <q-icon name='mdi-help-circle-outline text-grey-6' class='path-tooltip q-mx-sm q-pt-md q-mt-xs'>
                     <q-tooltip>Choose where to save the downloaded songs</q-tooltip>
@@ -174,8 +175,11 @@
     const $1t = get1t();
     const $q = useQuasar();
     
+    const config = ref({
+        path: ''
+    });
+
     const url = ref('');
-    const outputPath = ref('');
     const shazamConfidence = ref(0.75);
     const enableAutoTag = ref(false);
     const autoTagConfig = ref('');
@@ -184,22 +188,18 @@
     const foundSongs = ref<FoundSong[]>([]);
     
     const isValid = computed(() => {
-        if (!url.value || !outputPath.value) return false;
+        if (!url.value || !config.value.path) return false;
         if (enableAutoTag.value && !autoTagConfig.value) return false;
         if (!url.value.includes('youtube.com')) return false;
         return true;
     });
     
-    async function browseOutput() {
-        const result = await $1t.send('selectDirectory');
-        if (typeof result === 'string') {
-            outputPath.value = result;
-        }
+    function browse() {
+        $1t.browse('songs', config.value.path);
     }
     
     async function startDownload() {
         try {
-            // First analyze the URL for songs
             const result = await $1t.send('analyzeSongs', {
                 url: url.value,
                 confidence: shazamConfidence.value
@@ -227,7 +227,7 @@
         try {
             const result = await $1t.send('downloadSongs', {
                 url: url.value,
-                outputPath: outputPath.value,
+                outputPath: config.value.path,
                 confidence: shazamConfidence.value,
                 enableAutoTag: enableAutoTag.value,
                 autoTagConfig: enableAutoTag.value ? autoTagConfig.value : null,
