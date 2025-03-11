@@ -104,6 +104,7 @@ class OneTagger {
     onQuickTagBrowserEvent(_: any) {}
     onTagEditorEvent(_: any) {}
     onAudioFeaturesEvent(_: any) {}
+    onSongDownloaderEvent(_: any) {}
     onRenamerEvent(_: any) {}
     onFolderBrowserEvent(_: any) {}
     // =======================
@@ -367,6 +368,9 @@ class OneTagger {
                     case 'audiofeatures':
                         this.onAudioFeaturesEvent(json);
                         break;
+                    case 'songdownloader':
+                        this.onSongDownloaderEvent(json);
+                        break;
                     case 'tageditor':
                         this.onTagEditorEvent(json);
                         break;
@@ -456,6 +460,9 @@ class OneTagger {
         // Audio features path
         if (json.context == 'af')
             this.onAudioFeaturesEvent(json);
+        // Song downloader path
+        if (json.context == 'sd')
+            this.onSongDownloaderEvent(json);
         // Tag editor
         if (json.context == 'te')
             this.onTagEditorEvent(json);

@@ -23,6 +23,7 @@ class Settings {
     renamer: RenamerSettings = new RenamerSettings();
     quickTag: QuickTagSettings = new QuickTagSettings();
     audioFeatures: AudioFeaturesSettings = new AudioFeaturesSettings();
+    songDownloader: SongDownloaderSettings = new SongDownloaderSettings();
 
     tagEditorDouble: boolean = false;
     tagEditorCustom: string[] = [];
@@ -34,6 +35,7 @@ class Settings {
         let settings: Settings = Object.assign(new Settings(), data);
         settings.renamer = Object.assign(new RenamerSettings(), data.renamer);
         settings.audioFeatures = AudioFeaturesSettings.fromJson(data.audioFeatures);
+        settings.songDownloader = SongDownloaderSettings.fromJson(data.songDownloader);
         settings.quickTag = QuickTagSettings.fromJson(data.quickTag);
         return settings;
     }
@@ -71,6 +73,18 @@ class AudioFeaturesSettings {
     }
 }
 
+class SongDownloaderSettings {
+    spotifyClientId?: string;
+    spotifyClientSecret?: string;
+    config?: SongDownloaderConfig;
+
+    static fromJson(data: any): SongDownloaderSettings {
+        let a: SongDownloaderSettings = Object.assign(new SongDownloaderSettings(), data);
+        if (data.config)
+            a.config = SongDownloaderConfig.fromJson(data.config);
+        return a;
+    }
+}
 
 class QuickTagSettings {
     id3v24: boolean = false;
@@ -259,4 +273,52 @@ class AudioFeaturesProperty {
     }
 }
 
-export { Settings, QuickTagSettings, AudioFeaturesConfig, AudioFeaturesProperty };
+class SongDownloaderConfig {
+    path?: string;
+    metaTag = true;
+    skipTagged = false;
+    includeSubfolders = true;
+    mainTag = FrameName.same('AUDIO_FEATURES');
+    separators = new Separators();
+    properties: Record<string, SongDownloaderProperty> = {
+        acousticness: new SongDownloaderProperty(0, 90, '1T_ACOUSTICNESS'),
+        danceability: new SongDownloaderProperty(20, 80, '1T_DANCEABILITY'),
+        energy: new SongDownloaderProperty(20, 90, '1T_ENERGY'),
+        instrumentalness: new SongDownloaderProperty(50, 90, '1T_INSTRUMENTALNESS'),
+        liveness: new SongDownloaderProperty(0, 80, '1T_LIVENESS'), 
+        speechiness: new SongDownloaderProperty(0, 70, '1T_SPEECHINESS'),
+        valence: new SongDownloaderProperty(15, 85, '1T_VALENCE'), 
+        popularity: new SongDownloaderProperty(0, 80, '1T_POPULARITY'), 
+    }
+    type?: string;
+
+    static fromJson(data: any): SongDownloaderConfig {
+        let c: SongDownloaderConfig = Object.assign(new SongDownloaderConfig(), data);
+        c.mainTag = FrameName.fromJson(data.mainTag);
+        for (const [k, v] of Object.entries(data.properties)) {
+            c.properties[k] = SongDownloaderProperty.fromJson(v);
+        }
+        return c;
+    }
+}
+
+class SongDownloaderProperty {
+    tag: FrameName;
+    enabled: boolean;
+    range: { min: number, max: number }
+
+    constructor(min: number, max: number, frameName: string) {
+        this.tag = FrameName.same(frameName);
+        this.range = { min, max };
+        this.enabled = true;
+    }
+
+    static fromJson(data: any): SongDownloaderProperty {
+        let p = new SongDownloaderProperty(data.range.min, data.range.max, '');
+        p.enabled = data.enabled;
+        p.tag = FrameName.fromJson(data.tag);
+        return p;
+    }
+}
+
+export { Settings, QuickTagSettings, AudioFeaturesConfig, SongDownloaderConfig, AudioFeaturesProperty, SongDownloaderProperty };

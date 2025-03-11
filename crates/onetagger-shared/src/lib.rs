@@ -16,7 +16,6 @@ use log::LevelFilter;
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 use crossterm::style::Stylize;
-use youtube_dl::{YoutubeDl, YoutubeDlOutput};
 
 /// Get timestamp macro
 #[macro_export]
@@ -179,6 +178,7 @@ impl Settings {
     }
 }
 
+
 /// Capitalize every word
 /// https://stackoverflow.com/questions/38406793/why-is-capitalizing-the-first-letter-of-a-string-so-convoluted-in-rust/38406885#38406885
 pub fn capitalize(input: &str) -> String {
@@ -189,103 +189,4 @@ pub fn capitalize(input: &str) -> String {
             Some(f) => f.to_uppercase().collect::<String>() + c.as_str()
         }
     }).collect::<Vec<_>>().join(" ")
-}
-
-pub mod songsdownloader {
-    use serde::{Deserialize, Serialize};
-    use anyhow::Result;
-    use youtube_dl::{YoutubeDl, YoutubeDlOutput};
-    use std::path::PathBuf;
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct AnalyzeSongsRequest {
-        pub url: String,
-        pub confidence: f32,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct DownloadSongsRequest {
-        pub url: String,
-        pub output_path: String,
-        pub confidence: f32,
-        pub enable_auto_tag: bool,
-        pub auto_tag_config: Option<String>,
-        pub enable_audio_features: bool,
-        pub songs: Vec<FoundSong>,
-    }
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct FoundSong {
-        pub title: String,
-        pub artist: String,
-        pub video_url: String,
-        pub timestamp: Option<u64>,
-    }
-
-    pub async fn analyze_songs(request: AnalyzeSongsRequest) -> Result<Vec<FoundSong>> {
-        let output = YoutubeDl::new(&request.url)
-            .flat_playlist(true)
-            .run()?;
-
-        let mut songs = Vec::new();
-
-        match output {
-            YoutubeDlOutput::SingleVideo(video) => {
-                songs.push(FoundSong {
-                    title: video.title.unwrap_or_default(),
-                    artist: video.artist.unwrap_or_default(),
-                    video_url: video.url.unwrap_or_default(),
-                    timestamp: None,
-                });
-            }
-            YoutubeDlOutput::Playlist(playlist) => {
-                for entry in playlist.entries.unwrap_or_default() {
-                    songs.push(FoundSong {
-                        title: entry.title.unwrap_or_default(),
-                        artist: entry.artist.unwrap_or_default(),
-                        video_url: entry.url.unwrap_or_default(),
-                        timestamp: None,
-                    });
-                }
-            }
-        }
-
-        Ok(songs)
-    }
-
-    pub async fn download_songs(request: DownloadSongsRequest) -> Result<()> {
-        let output_dir = PathBuf::from(request.output_path);
-
-        for song in request.songs {
-            let output_file = output_dir.join(format!("{} - {}.mp3", song.artist, song.title));
-            
-            YoutubeDl::new(&song.video_url)
-                .extract_audio(true)
-                .output_template(output_file.to_str().unwrap())
-                .run()?;
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct StartContext {
-    pub port: String,
-    pub dev: bool,
-    pub open_browser: bool,
-    pub cli: bool,
-    pub version: String,
-    pub commit: String,
-}
-
-pub async fn start_all(context: StartContext) -> Result<(), Error> {
-    info!("Starting OneTagger v{} ({})", context.version, context.commit);
-    if context.dev {
-        info!("Running in development mode");
-    }
-    if context.cli {
-        info!("Running in CLI mode");
-    }
-    Ok(())
 }

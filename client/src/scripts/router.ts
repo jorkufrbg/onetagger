@@ -49,6 +49,10 @@ const routes = [
     {
         path: '/songsdownloader',
         component: SongsDownloader
+    },
+    {
+        path: '/songsdownloader/status',
+        component: AutotaggerStatus
     }
 ];
 
