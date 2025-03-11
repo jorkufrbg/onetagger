@@ -2,7 +2,7 @@
     <q-page class="songs-downloader q-pa-md">
         <!-- URL Input -->
         <div class='text-subtitle2 text-bold text-primary'>ENTER URL</div>
-        <div class='text-subtitle2 q-mb-md text-grey-6'>Enter a YouTube channel, playlist, or video URL</div>
+        <div class='text-subtitle2 q-mb-md text-grey-6'>Provide a URL for a YouTube channel, playlist, or video, or for Spotify, YouTube, or SoundCloud.</div>
         <div class='row justify-center input' style='max-width: 725px; margin: auto;'>
             <div class='col-1'></div>
             <q-input 
@@ -15,7 +15,7 @@
             </q-input>
             <div class='col-1'>
                 <q-icon name='mdi-help-circle-outline text-grey-6' class='path-tooltip q-mx-sm q-pt-md q-mt-xs'>
-                    <q-tooltip>Enter a YouTube URL to analyze for songs</q-tooltip>
+                    <q-tooltip>Submit a YouTube, Spotify, or SoundCloud URL to analyze the songs within.</q-tooltip>
                 </q-icon>
             </div>
         </div>
@@ -25,7 +25,7 @@
         <div class='text-subtitle2 q-mb-md text-grey-6'>
             Select where to save downloaded songs, copy/paste path directly or
             <span class='q-px-sm text-caption text-bold click-highlight'>CLICK</span> the 
-            <q-icon name='mdi-open-in-app'></q-icon> 
+            <q-icon name='mdi-open-in-app'></q-icon>  
             icon to browse
         </div>
         <div class='row justify-center input' style='max-width: 725px; margin: auto;'>
@@ -64,6 +64,39 @@
                     Higher values mean more accurate but fewer matches
                 </q-tooltip>
             </q-icon>
+        </div>
+    
+        <!-- Confirm Songs Switch -->
+        <div class='text-subtitle2 text-bold text-primary q-mt-xl'>CONFIRMATION</div>
+        <div class='row justify-center' style='max-width: 550px; margin: auto;'>
+            <q-toggle
+                v-model='confirmBeforeDownload'
+                label='Confirm Songs Before Download'
+                class='q-mt-md'
+            />
+            <q-icon name='mdi-help-circle-outline text-grey-6' class='q-pt-md q-mx-sm'>
+                <q-tooltip>
+                    Highly recommended to keep enabled as song extraction may not always be accurate, especially for YouTube and SoundCloud. For Spotify, while more reliable, it's still good practice to verify the correct URL was provided.
+                </q-tooltip>
+            </q-icon>
+        </div>
+    
+        <!-- URL Preview -->
+        <div v-if='urlPreview' class='row justify-center q-mt-sm' style='max-width: 725px; margin: auto;'>
+            <div class='col-10 text-grey-6' style='font-size: 0.9em; text-align: left; padding: 8px 12px; background: rgba(255, 255, 255, 0.05); border-radius: 4px;'>
+                <template v-if='urlPreview.type === "youtube"'>
+                    <span class="text-weight-medium">YouTube {{ urlPreview.contentType }}:</span> {{ urlPreview.title }}
+                    <div v-if="urlPreview.description">{{ urlPreview.description }}</div>
+                </template>
+                <template v-else-if='urlPreview.type === "spotify"'>
+                    <span class="text-weight-medium">Spotify {{ urlPreview.contentType }}:</span> {{ urlPreview.title }}
+                    <div v-if="urlPreview.description">{{ urlPreview.description }}</div>
+                </template>
+                <template v-else-if='urlPreview.type === "soundcloud"'>
+                    <span class="text-weight-medium">SoundCloud {{ urlPreview.contentType }}:</span> {{ urlPreview.title }}
+                    <div v-if="urlPreview.description">{{ urlPreview.description }}</div>
+                </template>
+            </div>
         </div>
     
         <!-- Auto Tag Option -->
@@ -154,7 +187,7 @@
     </template>
     
     <script lang='ts' setup>
-    import { ref, computed } from 'vue';
+    import { ref, computed, watch } from 'vue';
     import { get1t } from '../scripts/onetagger';
     import { useQuasar } from 'quasar';
     
@@ -172,6 +205,13 @@
         error?: string;
     }
     
+    interface URLPreview {
+        type: 'youtube' | 'spotify' | 'soundcloud';
+        contentType: string; // 'Channel', 'Playlist', 'Video', 'Artist', 'Album', etc.
+        title: string;
+        description?: string;
+    }
+    
     const $1t = get1t();
     const $q = useQuasar();
     
@@ -180,18 +220,79 @@
     });
 
     const url = ref('');
+    const urlPreview = ref<URLPreview | null>(null);
     const shazamConfidence = ref(0.75);
+    const confirmBeforeDownload = ref(true);
     const enableAutoTag = ref(false);
     const autoTagConfig = ref('');
     const enableAudioFeatures = ref(false);
     const showConfirmation = ref(false);
     const foundSongs = ref<FoundSong[]>([]);
     
+    // Watch URL changes
+    watch(url, async (newUrl) => {
+        if (!newUrl) {
+            urlPreview.value = null;
+            return;
+        }
+
+        // Basic URL validation
+        const isYoutube = newUrl.includes('youtube.com') || newUrl.includes('youtu.be');
+        const isSpotify = newUrl.includes('spotify.com');
+        const isSoundcloud = newUrl.includes('soundcloud.com');
+
+        if (!isYoutube && !isSpotify && !isSoundcloud) {
+            urlPreview.value = null;
+            return;
+        }
+
+        try {
+            // Show loading state
+            $q.loading.show({
+                message: 'Fetching URL information...'
+            });
+
+            const result = await $1t.send('songdownloader_getUrlInfo', { url: newUrl });
+            
+            $q.loading.hide();
+
+            if (result && result.success) {
+                urlPreview.value = {
+                    type: result.platform,
+                    contentType: result.contentType,
+                    title: result.title,
+                    description: result.description
+                };
+            } else {
+                urlPreview.value = null;
+                if (result && result.error) {
+                    $q.notify({
+                        type: 'warning',
+                        message: result.error,
+                        position: 'top'
+                    });
+                }
+            }
+        } catch (error) {
+            $q.loading.hide();
+            console.error('Error fetching URL preview:', error);
+            urlPreview.value = null;
+            $q.notify({
+                type: 'negative',
+                message: 'Failed to fetch URL information',
+                position: 'top'
+            });
+        }
+    }, { debounce: 500 }); // Add debounce to avoid too many requests while typing
+    
     const isValid = computed(() => {
         if (!url.value || !config.value.path) return false;
         if (enableAutoTag.value && !autoTagConfig.value) return false;
-        if (!url.value.includes('youtube.com')) return false;
-        return true;
+        // Update validation to include other platforms
+        const isValidUrl = url.value.includes('youtube.com') || 
+                          url.value.includes('spotify.com') || 
+                          url.value.includes('soundcloud.com');
+        return isValidUrl;
     });
     
     function browse() {
@@ -208,8 +309,13 @@
             const response = result as unknown as IPCResponse;
     
             if (response && response.songs) {
-                foundSongs.value = response.songs;
-                showConfirmation.value = true;
+                if (confirmBeforeDownload.value) {
+                    foundSongs.value = response.songs;
+                    showConfirmation.value = true;
+                } else {
+                    // If confirmation is disabled, proceed directly to download
+                    await confirmDownload();
+                }
             } else {
                 throw new Error('No songs found in response');
             }
