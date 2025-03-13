@@ -34,6 +34,7 @@ onetagger-autotag = { path = "../onetagger-autotag" }
 onetagger-renamer = { path = "../onetagger-renamer" }
 onetagger-playlist = { path = "../onetagger-playlist" }
 onetagger-platforms = { path = "../onetagger-platforms" }
+onetagger-songdownloader = { path = "../onetagger-songdownloader" }
 
 # Windows specific 
 [target.'cfg(windows)'.dependencies]
