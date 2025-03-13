@@ -86,6 +86,59 @@ fn main() {
             }
             info!("Tagging finished, took: {} seconds.", (timestamp!() - start) / 1000);
         },
+        // Song Downloader
+        Actions::SongDownloader { url, output, confidence, enable_auto_tag, auto_tag_config, enable_audio_features, client_id, client_secret } => {
+            info!("Starting song downloader for URL: {}", url);
+            
+            // Get the path to the Python script
+            let script_path = std::env::current_dir()?
+                .join("YoutubeToSpotify")
+                .join("downloader.py");
+            
+            // Check if the script exists
+            if !script_path.exists() {
+                return Err(anyhow::anyhow!("Song downloader script not found at {:?}", script_path).into());
+            }
+            
+            // Create the output directory if it doesn't exist
+            std::fs::create_dir_all(output)?;
+            
+            // Build the command
+            let mut cmd = std::process::Command::new("python");
+            cmd.arg(&script_path)
+                .arg("--url").arg(url)
+                .arg("--output").arg(output)
+                .arg("--confidence").arg(confidence.to_string());
+            
+            // Add optional flags
+            if *enable_auto_tag {
+                cmd.arg("--enable-auto-tag");
+                if let Some(config) = auto_tag_config {
+                    cmd.arg("--auto-tag-config").arg(config);
+                }
+            }
+            
+            if *enable_audio_features {
+                cmd.arg("--enable-audio-features");
+                if let (Some(id), Some(secret)) = (client_id, client_secret) {
+                    cmd.arg("--client-id").arg(id)
+                       .arg("--client-secret").arg(secret);
+                } else {
+                    return Err(anyhow::anyhow!("Spotify client ID and secret are required for audio features").into());
+                }
+            }
+            
+            // Run the command
+            let output = cmd.output()?;
+            
+            if output.status.success() {
+                info!("Songs downloaded successfully!");
+                println!("{}", String::from_utf8_lossy(&output.stdout));
+            } else {
+                error!("Failed to download songs: {}", String::from_utf8_lossy(&output.stderr));
+                return Err(anyhow::anyhow!("Failed to download songs").into());
+            }
+        },
         // Spotify OAuth flow
         Actions::AuthorizeSpotify { client_id, client_secret, prompt, expose } => {
             let (auth_url, client) = Spotify::generate_auth_url(&client_id, &client_secret).expect("Failed generating auth URL!");
@@ -287,6 +340,40 @@ enum Actions {
         /// Don't include subfolders
         #[clap(long)]
         no_subfolders: bool,
+    },
+    /// Download songs from YouTube videos or playlists
+    SongDownloader {
+        /// YouTube URL (channel, playlist, or video)
+        #[clap(short, long)]
+        url: String,
+        
+        /// Output directory to save downloaded songs
+        #[clap(short, long)]
+        output: PathBuf,
+        
+        /// Shazam confidence threshold (0.0-1.0)
+        #[clap(long, default_value = "0.75")]
+        confidence: f32,
+        
+        /// Enable auto-tagging of downloaded songs
+        #[clap(long)]
+        enable_auto_tag: bool,
+        
+        /// Path to auto-tag configuration file
+        #[clap(long)]
+        auto_tag_config: Option<PathBuf>,
+        
+        /// Enable audio features analysis
+        #[clap(long)]
+        enable_audio_features: bool,
+        
+        /// Spotify Client ID (required for audio features)
+        #[clap(long)]
+        client_id: Option<String>,
+        
+        /// Spotify Client Secret (required for audio features)
+        #[clap(long)]
+        client_secret: Option<String>,
     },
     /// Authorize Spotify and cache the token
     AuthorizeSpotify {

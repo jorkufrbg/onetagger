@@ -18,12 +18,25 @@ use onetagger_platforms::spotify::Spotify;
 use onetagger_player::{AudioSources, AudioPlayer};
 use onetagger_shared::{Settings, COMMIT};
 use onetagger_playlist::{UIPlaylist, PLAYLIST_EXTENSIONS, get_files_from_playlist_file};
+use std::process::Command;
+use std::thread;
+use crossbeam_channel::unbounded;
+use std::env;
+use std::fs;
 
 use crate::StartContext;
 use crate::quicktag::{QuickTag, QuickTagFile, QuickTagData};
 use crate::tageditor::TagEditor;
 use crate::browser::{FileBrowser, FolderBrowser};
 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FoundSong {
+    title: String,
+    artist: String,
+    video_url: String,
+    timestamp: Option<u64>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "camelCase")]
@@ -79,6 +92,20 @@ enum Action {
 
     ManualTag { config: TaggerConfig, path: PathBuf },
     ManualTagApply { matches: Vec<TrackMatch>, path: PathBuf, config: TaggerConfig },
+    
+    #[serde(rename_all = "camelCase")]
+    AnalyzeSongs { url: String, confidence: f32 },
+    
+    #[serde(rename_all = "camelCase")]
+    DownloadSongs { 
+        url: String, 
+        output_path: String, 
+        confidence: f32, 
+        enable_auto_tag: bool, 
+        auto_tag_config: Option<String>,
+        enable_audio_features: bool,
+        songs: Vec<FoundSong>
+    },
 }
 
 
@@ -208,6 +235,104 @@ async fn send_socket<D: Serialize>(ws: &mut WebSocket, json: D) -> Result<(), Er
 /// Serialize and send to socket
 async fn send_socket_inner<D: Serialize>(ws: &mut WebSocket, json: D) -> Result<(), Error> {
     ws.send(Message::from(serde_json::to_string(&json)?)).await?;
+    Ok(())
+}
+
+/// Analyze a YouTube URL to find songs
+fn analyze_songs(url: &str, confidence: f32) -> Result<Vec<FoundSong>, Error> {
+    // Get the path to the Python script
+    let script_path = env::current_dir()?
+        .join("YoutubeToSpotify")
+        .join("analyzer.py");
+    
+    // Check if the script exists
+    if !script_path.exists() {
+        return Err(anyhow::anyhow!("Song analyzer script not found at {:?}", script_path));
+    }
+    
+    // Prepare the command
+    let output = Command::new("python")
+        .arg(&script_path)
+        .arg("--url").arg(url)
+        .arg("--confidence").arg(confidence.to_string())
+        .arg("--mode").arg("analyze")
+        .output()?;
+    
+    if !output.status.success() {
+        let error_message = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!("Failed to analyze songs: {}", error_message));
+    }
+    
+    // Parse the output JSON
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let songs: Vec<FoundSong> = serde_json::from_str(&stdout)?;
+    
+    Ok(songs)
+}
+
+/// Download songs from a YouTube URL
+fn download_songs(
+    url: &str,
+    output_path: &str,
+    confidence: f32,
+    enable_auto_tag: bool,
+    auto_tag_config: Option<String>,
+    enable_audio_features: bool,
+    songs: &[FoundSong]
+) -> Result<(), Error> {
+    // Create the output directory if it doesn't exist
+    fs::create_dir_all(output_path)?;
+    
+    // Get the path to the Python script
+    let script_path = env::current_dir()?
+        .join("YoutubeToSpotify")
+        .join("downloader.py");
+    
+    // Check if the script exists
+    if !script_path.exists() {
+        return Err(anyhow::anyhow!("Song downloader script not found at {:?}", script_path));
+    }
+    
+    // Create a temporary JSON file with song information
+    let songs_json = serde_json::to_string(songs)?;
+    let temp_songs_file = env::temp_dir().join("onetagger_songs.json");
+    fs::write(&temp_songs_file, &songs_json)?;
+    
+    // Build the command
+    let mut cmd = Command::new("python");
+    cmd.arg(&script_path)
+        .arg("--url").arg(url)
+        .arg("--output").arg(output_path)
+        .arg("--confidence").arg(confidence.to_string())
+        .arg("--songs-file").arg(&temp_songs_file);
+    
+    // Add optional flags
+    if enable_auto_tag {
+        cmd.arg("--enable-auto-tag");
+        if let Some(config) = &auto_tag_config {
+            let config_path = env::temp_dir().join("onetagger_autotagconfig.json");
+            fs::write(&config_path, config)?;
+            cmd.arg("--auto-tag-config").arg(&config_path);
+        }
+    }
+    
+    if enable_audio_features {
+        cmd.arg("--enable-audio-features");
+    }
+    
+    // Run the command
+    let output = cmd.output()?;
+    
+    // Clean up temporary files
+    if temp_songs_file.exists() {
+        fs::remove_file(temp_songs_file).ok();
+    }
+    
+    if !output.status.success() {
+        let error_message = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow::anyhow!("Failed to download songs: {}", error_message));
+    }
+    
     Ok(())
 }
 
@@ -638,6 +763,87 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
             }
         },
 
+        Action::AnalyzeSongs { url, confidence } => {
+            info!("Analyzing YouTube URL: {}", url);
+            
+            // Process in a background thread
+            let (tx, rx) = unbounded();
+            
+            // Clone values for thread
+            let url_clone = url.clone();
+            
+            thread::spawn(move || {
+                match analyze_songs(&url_clone, confidence) {
+                    Ok(songs) => tx.send(Ok(songs)).ok(),
+                    Err(e) => tx.send(Err(e)).ok(),
+                }
+            });
+            
+            // Wait for result from background thread
+            if let Ok(result) = rx.recv() {
+                match result {
+                    Ok(songs) => {
+                        send_socket(websocket, json!({
+                            "action": "analyzeSongs",
+                            "songs": songs
+                        })).await.ok();
+                    },
+                    Err(e) => {
+                        error!("Failed analyzing songs: {}", e);
+                        send_socket(websocket, json!({
+                            "action": "analyzeSongs",
+                            "error": e.to_string()
+                        })).await.ok();
+                    }
+                }
+            }
+        },
+        
+        Action::DownloadSongs { url, output_path, confidence, enable_auto_tag, auto_tag_config, enable_audio_features, songs } => {
+            info!("Starting song download process from URL: {}", url);
+            
+            // Start a background thread to handle the download
+            let (tx, rx) = unbounded();
+            
+            // Clone values for thread
+            let url_clone = url.clone();
+            let output_path_clone = output_path.clone();
+            let songs_clone = songs.clone();
+            let auto_tag_config_clone = auto_tag_config.clone();
+            
+            thread::spawn(move || {
+                let result = download_songs(
+                    &url_clone, 
+                    &output_path_clone, 
+                    confidence, 
+                    enable_auto_tag, 
+                    auto_tag_config_clone,
+                    enable_audio_features, 
+                    &songs_clone
+                );
+                tx.send(result).ok();
+            });
+            
+            // Wait for result
+            if let Ok(result) = rx.recv() {
+                match result {
+                    Ok(_) => {
+                        send_socket(websocket, json!({
+                            "action": "downloadSongs",
+                            "success": true
+                        })).await.ok();
+                    },
+                    Err(e) => {
+                        error!("Failed downloading songs: {}", e);
+                        send_socket(websocket, json!({
+                            "action": "downloadSongs",
+                            "success": false,
+                            "error": e.to_string()
+                        })).await.ok();
+                    }
+                }
+            }
+        },
 
         Action::RepoManifest => {
             send_socket(websocket, json!({

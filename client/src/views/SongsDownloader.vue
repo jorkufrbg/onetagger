@@ -110,14 +110,27 @@
     
         <!-- Submit Button -->
         <div class='q-mt-xl q-mb-xl text-center'>
-            <q-btn 
-                color='primary'
-                label='Start Download'
-                :disable='!isValid'
-                @click='startDownload'
-                push
-                size='lg'
-            />
+            <div class='row'>
+                <!-- CLI FAB -->
+                <div class='q-mr-md q-mt-md col-12 text-right'>
+                    <q-btn class='bg-grey-9' flat round icon='mdi-console' color='grey-4' @click='cliDialog = true'>
+                        <q-tooltip anchor="top middle" self="bottom middle" :offset="[10, 10]">            
+                            <span class='text-weight-medium'>CLI Version Config</span>
+                        </q-tooltip>
+                    </q-btn>
+                </div>
+
+                <div class='col-12 text-center'>
+                    <q-btn 
+                        color='primary'
+                        label='Start Download'
+                        :disable='!isValid'
+                        @click='startDownload'
+                        push
+                        size='lg'
+                    />
+                </div>
+            </div>
         </div>
     
         <!-- Confirmation Dialog -->
@@ -138,6 +151,10 @@
                                 </q-item-section>
                             </q-item>
                         </q-list>
+                        
+                        <div v-if='foundSongs.length > 2000' class='text-negative q-mt-md'>
+                            Warning: Spotify has a query limit of 2,000 songs per 24 hours, which applies to both auto-tagging and audio features.
+                        </div>
                     </div>
                     <div v-else>
                         No songs found with current settings
@@ -150,6 +167,11 @@
                 </q-card-actions>
             </q-card>
         </q-dialog>
+        
+        <!-- CLI Dialog -->
+        <q-dialog v-model='cliDialog'>
+            <CliDialog :config='cliConfig' command='songdownloader' extra='--confidence 0.75'></CliDialog>
+        </q-dialog>
     </q-page>
     </template>
     
@@ -157,6 +179,7 @@
     import { ref, computed } from 'vue';
     import { get1t } from '../scripts/onetagger';
     import { useQuasar } from 'quasar';
+    import CliDialog from '../components/CliDialog.vue';
     
     interface FoundSong {
         title: string;
@@ -186,12 +209,25 @@
     const enableAudioFeatures = ref(false);
     const showConfirmation = ref(false);
     const foundSongs = ref<FoundSong[]>([]);
+    const cliDialog = ref(false);
     
     const isValid = computed(() => {
         if (!url.value || !config.value.path) return false;
         if (enableAutoTag.value && !autoTagConfig.value) return false;
         if (!url.value.includes('youtube.com')) return false;
         return true;
+    });
+    
+    // CLI config for showing in dialog
+    const cliConfig = computed(() => {
+        return {
+            url: url.value,
+            output: config.value.path,
+            confidence: shazamConfidence.value,
+            enableAutoTag: enableAutoTag.value,
+            autoTagConfig: enableAutoTag.value ? autoTagConfig.value : undefined,
+            enableAudioFeatures: enableAudioFeatures.value
+        };
     });
     
     function browse() {
