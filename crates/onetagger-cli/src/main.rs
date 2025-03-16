@@ -86,10 +86,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             info!("Tagging finished, took: {} seconds.", (timestamp!() - start) / 1000);
         },
-        Actions::QueryUrl { url } => {
-            info!("Querying URL: {}", url);
+        Actions::QueryUrl { url, confidence } => {
+            info!("Querying URL: {} with confidence: {}", url, confidence);
             
-            match onetagger_songdownloader::get_url_info(url) {
+            match onetagger_songdownloader::get_url_info_with_confidence(url, *confidence) {
                 Ok(info) => {
                     println!("\nURL Information:");
                     println!("Platform:     {}", info.platform);
@@ -97,6 +97,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("Title:        {}", info.title);
                     if let Some(desc) = info.description {
                         println!("Description:  {}", desc);
+                    }
+                    
+                    // Display video tracklists if available
+                    if let Some(video_tracklists) = info.video_tracklists {
+                        println!("\nExtracted Tracklists:");
+                        let mut json_output = serde_json::Map::new();
+                        
+                        // Add the channel name
+                        json_output.insert("Youtube Channel".to_string(), serde_json::Value::String(info.title.clone()));
+                        
+                        // Add each video's tracklist
+                        for (video_title, tracklist) in video_tracklists {
+                            json_output.insert(video_title, serde_json::Value::Array(
+                                tracklist.into_iter().map(|s| serde_json::Value::String(s)).collect()
+                            ));
+                        }
+                        
+                        println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
                     }
                 }
                 Err(e) => {
@@ -365,6 +383,10 @@ enum Actions {
         /// URL to query (YouTube, Spotify, or SoundCloud)
         #[clap(short, long)]
         url: String,
+        
+        /// Shazam confidence threshold (0.0-1.0)
+        #[clap(long, default_value = "0.75")]
+        confidence: f32,
     },
     /// Download songs from YouTube videos or playlists
     SongDownloader {
@@ -548,4 +570,3 @@ impl Actions {
         }
     }
 }
-
