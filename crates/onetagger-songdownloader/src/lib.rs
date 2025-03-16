@@ -1,11 +1,7 @@
-#[macro_use] extern crate log;
 #[macro_use] extern crate anyhow;
 
-use anyhow::Error;
 use serde::{Serialize, Deserialize};
 use reqwest::blocking::Client;
-use regex::Regex;
-use scraper::{Html, Selector};
 
 mod url_info;
 

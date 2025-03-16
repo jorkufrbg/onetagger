@@ -15,7 +15,7 @@ use onetagger_autotag::audiofeatures::{AudioFeaturesConfig, AudioFeatures};
 use onetagger_autotag::{Tagger, TaggerConfigExt, AudioFileInfoImpl};
 use onetagger_tagger::{TaggerConfig, AudioFileInfo, SupportedTag};
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Default configs
@@ -204,6 +204,8 @@ fn main() {
             }).expect("Failed starting the server");
         }
     }
+    
+    Ok(())
 }
 
 

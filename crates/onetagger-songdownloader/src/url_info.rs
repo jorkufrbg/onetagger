@@ -1,7 +1,6 @@
 use anyhow::Error;
 use reqwest::blocking::Client;
 use scraper::{Html, Selector};
-use regex::Regex;
 use crate::UrlInfo;
 
 /// Get URL information for a given URL
