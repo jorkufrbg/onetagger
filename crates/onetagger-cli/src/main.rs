@@ -22,17 +22,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if cli.autotagger_config {
         let config = serde_json::to_string_pretty(&TaggerConfig::custom_default()).expect("Failed serializing default config!");
         println!("{config}");
-        return;
+        return Ok(());
     }
     if cli.audiofeatures_config {
         let config = serde_json::to_string_pretty(&AudioFeaturesConfig::default()).expect("Failed serializing config!");
         println!("{config}");
-        return;
+        return Ok(());
     }
 
     if cli.action.is_none() {
         println!("No action. Use onetagger-cli --help to get print help.");
-        return;
+        return Ok(());
     }
 
     // Setup logging
@@ -86,7 +86,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             info!("Tagging finished, took: {} seconds.", (timestamp!() - start) / 1000);
         },
-        // Song Downloader
+        Actions::QueryUrl { url } => {
+            info!("Querying URL: {}", url);
+            
+            match onetagger_songdownloader::get_url_info(url) {
+                Ok(info) => {
+                    println!("\nURL Information:");
+                    println!("Platform:     {}", info.platform);
+                    println!("Content Type: {}", info.content_type);
+                    println!("Title:        {}", info.title);
+                    if let Some(desc) = info.description {
+                        println!("Description:  {}", desc);
+                    }
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Failed to get URL information: {}", e).into());
+                }
+            }
+        },
         Actions::SongDownloader { url, output, confidence, enable_auto_tag, auto_tag_config, enable_audio_features, client_id, client_secret } => {
             info!("Starting song downloader for URL: {}", url);
             
@@ -189,7 +206,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for (i, (from, to)) in names.iter().enumerate() {
                     println!("{}. {:?} -> {:?}", i + 1, from, to);
                 }
-                return;
+                return Ok(());
             }
 
             renamer.rename(&names, &config).expect("Failed renaming!");
@@ -342,6 +359,12 @@ enum Actions {
         /// Don't include subfolders
         #[clap(long)]
         no_subfolders: bool,
+    },
+    /// Query information about a URL without downloading
+    QueryUrl {
+        /// URL to query (YouTube, Spotify, or SoundCloud)
+        #[clap(short, long)]
+        url: String,
     },
     /// Download songs from YouTube videos or playlists
     SongDownloader {
