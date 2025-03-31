@@ -10,10 +10,11 @@ use clap::{Parser, Subcommand};
 use convert_case::{Casing, Case};
 use onetagger_platforms::spotify::Spotify;
 use onetagger_renamer::{RenamerConfig, Renamer, TemplateParser};
-use onetagger_shared::{VERSION, COMMIT};
+use onetagger_shared::VERSION;
 use onetagger_autotag::audiofeatures::{AudioFeaturesConfig, AudioFeatures};
 use onetagger_autotag::{Tagger, TaggerConfigExt, AudioFileInfoImpl};
 use onetagger_tagger::{TaggerConfig, AudioFileInfo, SupportedTag};
+use env_logger;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -36,8 +37,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Setup logging
-    onetagger_shared::setup();
-    info!("\n\nStarting OneTagger v{VERSION} Commit: {COMMIT} OS: {}\n\n", std::env::consts::OS);
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error"))
+        .format_timestamp(None)
+        .init();
+    info!("\nStarting OneTagger v{VERSION}\n");
 
 
     let action = cli.action.unwrap();
@@ -87,34 +90,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("Tagging finished, took: {} seconds.", (timestamp!() - start) / 1000);
         },
         Actions::QueryUrl { url, confidence } => {
-            info!("Querying URL: {} with confidence: {}", url, confidence);
-            
             match onetagger_songdownloader::get_url_info_with_confidence(url, *confidence) {
                 Ok(info) => {
-                    println!("\nURL Information:");
-                    println!("Platform:     {}", info.platform);
-                    println!("Content Type: {}", info.content_type);
-                    println!("Title:        {}", info.title);
+                    println!("\nChannel: {}", info.title);
                     if let Some(desc) = info.description {
-                        println!("Description:  {}", desc);
+                        println!("{}", desc);
                     }
-                    
-                    // Display video tracklists if available
-                    if let Some(video_tracklists) = info.video_tracklists {
-                        println!("\nExtracted Tracklists:");
-                        let mut json_output = serde_json::Map::new();
-                        
-                        // Add the channel name
-                        json_output.insert("Youtube Channel".to_string(), serde_json::Value::String(info.title.clone()));
-                        
-                        // Add each video's tracklist
-                        for (video_title, tracklist) in video_tracklists {
-                            json_output.insert(video_title, serde_json::Value::Array(
-                                tracklist.into_iter().map(|s| serde_json::Value::String(s)).collect()
-                            ));
+                    if let Some(videos) = info.videos {
+                        println!("\nVideos:");
+                        for (i, (title, video_url)) in videos.iter().enumerate() {
+                            println!("{}. {} - {}", i + 1, title, video_url);
                         }
-                        
-                        println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
                     }
                 }
                 Err(e) => {
