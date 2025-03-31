@@ -98,8 +98,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     if let Some(videos) = info.videos {
                         println!("\nVideos:");
-                        for (i, (title, video_url)) in videos.iter().enumerate() {
+                        for (i, (title, video_url, tracklist)) in videos.iter().enumerate() {
                             println!("{}. {} - {}", i + 1, title, video_url);
+                            
+                            // Display tracklist if available
+                            if !tracklist.is_empty() {
+                                println!("   Tracklist ({} tracks):", tracklist.len());
+                                for (j, track) in tracklist.iter().enumerate() {
+                                    println!("     {}. {}", j + 1, track);
+                                }
+                                println!(); // Add a blank line after tracklist
+                            }
                         }
                     }
                 }

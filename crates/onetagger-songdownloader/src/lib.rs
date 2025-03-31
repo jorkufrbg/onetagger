@@ -25,7 +25,7 @@ pub struct UrlInfo {
     pub title: String,
     pub description: Option<String>,
     pub video_tracklists: Option<std::collections::HashMap<String, Vec<String>>>,
-    pub videos: Option<Vec<(String, String)>>,
+    pub videos: Option<Vec<(String, String, Vec<String>)>>,
     pub url: String,
 }
 
@@ -47,7 +47,7 @@ impl UrlInfo {
         self
     }
     
-    pub fn with_videos(mut self, videos: Vec<(String, String)>) -> Self {
+    pub fn with_videos(mut self, videos: Vec<(String, String, Vec<String>)>) -> Self {
         self.videos = Some(videos);
         self
     }
