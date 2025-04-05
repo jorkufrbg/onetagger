@@ -3,17 +3,28 @@ use reqwest::blocking::Client;
 use scraper::{Html, Selector};
 use regex::Regex;
 use crate::UrlInfo;
+use std::path::Path;
+use std::time::Duration;
+use fantoccini::{Client as WebClient, ClientBuilder, Locator};
+use tokio::runtime::Runtime;
+use log::{info, warn, error, debug};
 
 /// Get URL information for a given URL
-pub fn get_url_info(url: &str) -> Result<UrlInfo, Error> {
-    get_url_info_with_confidence(url, 0.75)
+pub fn get_query_url(url: &str) -> Result<UrlInfo, Error> {
+    get_query_url_with_confidence(url, 0.75)
 }
 
 /// Get URL information for a given URL with a specified confidence threshold
 /// The confidence parameter is used for Shazam identification when downloading songs
-pub fn get_url_info_with_confidence(url: &str, _confidence: f32) -> Result<UrlInfo, Error> {
+pub fn get_query_url_with_confidence(url: &str, confidence: f32) -> Result<UrlInfo, Error> {
+    // Validate URL
+    if !url.contains("youtube.com") && !url.contains("youtu.be") && 
+       !url.contains("spotify.com") && !url.contains("soundcloud.com") {
+        bail!("Unsupported URL type. Must be YouTube, Spotify, or SoundCloud URL.");
+    }
+    
     if url.contains("youtube.com") || url.contains("youtu.be") {
-        return get_youtube_info(url);
+        return get_youtube_info(url, confidence);
     } else if url.contains("spotify.com") {
         return get_spotify_info(url);
     } else if url.contains("soundcloud.com") {
@@ -23,9 +34,19 @@ pub fn get_url_info_with_confidence(url: &str, _confidence: f32) -> Result<UrlIn
     bail!("Unsupported URL type")
 }
 
+/// Check if a directory exists
+pub fn check_directory(directory: Option<&Path>) -> Result<(), Error> {
+    if let Some(dir) = directory {
+        if !dir.exists() {
+            bail!("Directory does not exist: {:?}", dir);
+        }
+    }
+    Ok(())
+}
+
 /// Get information from a YouTube URL
-fn get_youtube_info(url: &str) -> Result<UrlInfo, Error> {
-    let mut content_type = if url.contains("/@") {
+fn get_youtube_info(url: &str, confidence: f32) -> Result<UrlInfo, Error> {
+    let content_type = if url.contains("/@") {
         "Channel"
     } else if url.contains("/watch?v=") {
         "Video"
@@ -35,29 +56,39 @@ fn get_youtube_info(url: &str) -> Result<UrlInfo, Error> {
         "Content"
     };
 
+    info!("Processing YouTube {} URL: {}", content_type, url);
+
     // For single video
     if content_type == "Video" {
-        println!("Fetching single video information from {}", url);
-        let client = Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-            .build()?;
-
-        // Get video description and tracklist
-        match get_youtube_video_tracklist(&client, url) {
-            Ok((description, tracklist)) => {
-                if !tracklist.is_empty() {
-                    println!("Found tracklist with {} tracks", tracklist.len());
-                    let videos = vec![(
-                        "Single Video".to_string(),
-                        url.to_string(),
-                        tracklist
-                    )];
-                    let mut result = UrlInfo::new("youtube", content_type, "Single Video", Some(description));
-        result = result.with_videos(videos);
-                    return Ok(result);
-    }
-}
-            Err(e) => println!("Error getting tracklist: {}", e)
+        info!("Fetching single video information from {}", url);
+        
+        // Use WebDriver to scrape the video
+        let rt = Runtime::new()?;
+        let video_info = rt.block_on(async {
+            let client = create_headless_browser().await?;
+            let result = scrape_youtube_video(&client, url).await;
+            client.close().await?;
+            result
+        })?;
+        
+        let (title, description, tracklist) = video_info;
+        
+        if !tracklist.is_empty() {
+            info!("Found tracklist with {} tracks", tracklist.len());
+            let videos = vec![(
+                title.clone(),
+                url.to_string(),
+                tracklist
+            )];
+            
+            let mut result = UrlInfo::new("youtube", content_type, &title, Some(description));
+            result = result.with_videos(videos);
+            result = result.with_url(url.to_string());
+            
+            return Ok(result);
+        } else {
+            info!("No tracklist found in video description");
+            return Ok(UrlInfo::new("youtube", content_type, &title, Some(description)));
         }
     }
 
@@ -76,27 +107,288 @@ fn get_youtube_info(url: &str) -> Result<UrlInfo, Error> {
             }
         }
 
-        println!("Step 1: Preparing to fetch data from URL: {}", url_to_fetch);
+        info!("Step 1: Preparing to fetch data from URL: {}", url_to_fetch);
+        
+        // Use WebDriver to scrape the channel
+        let rt = Runtime::new()?;
+        let channel_info = rt.block_on(async {
+            let client = create_headless_browser().await?;
+            let result = scrape_youtube_channel(&client, &url_to_fetch, confidence).await;
+            client.close().await?;
+            result
+        })?;
+        
+        let (video_count, videos) = channel_info;
+        
+        info!("Scraped YouTube channel {} • {} videos found.", channel_name, video_count);
+        
+        let description = Some(format!("Found {} videos for channel @{}", video_count, channel_name));
+        let mut result = UrlInfo::new("youtube", content_type, &channel_name, description);
+        result = result.with_url(url_to_fetch);
 
-        match get_youtube_channel_info(&url_to_fetch) {
-            Ok((video_count, videos)) => {
-                let description = Some(format!("Found {} videos for channel @{}", video_count, channel_name));
-                let mut result = UrlInfo::new("youtube", content_type, &channel_name, description);
-                result = result.with_url(url_to_fetch);
-
-                if !videos.is_empty() {
-                    result = result.with_videos(videos);
-                }
-
-                return Ok(result);
-            }
-            Err(e) => {
-                println!("Error fetching channel info: {}", e);
-            }
+        if !videos.is_empty() {
+            result = result.with_videos(videos);
         }
+
+        return Ok(result);
+    }
+    
+    // For Playlist type
+    if content_type == "Playlist" {
+        info!("Processing YouTube playlist: {}", url);
+        
+        // Use WebDriver to scrape the playlist
+        let rt = Runtime::new()?;
+        let playlist_info = rt.block_on(async {
+            let client = create_headless_browser().await?;
+            let result = scrape_youtube_playlist(&client, url, confidence).await;
+            client.close().await?;
+            result
+        })?;
+        
+        let (playlist_title, video_count, videos) = playlist_info;
+        
+        info!("Scraped YouTube playlist {} • {} videos found.", playlist_title, video_count);
+        
+        let description = Some(format!("Found {} videos in playlist {}", video_count, playlist_title));
+        let mut result = UrlInfo::new("youtube", content_type, &playlist_title, description);
+        result = result.with_url(url.to_string());
+
+        if !videos.is_empty() {
+            result = result.with_videos(videos);
+        }
+
+        return Ok(result);
     }
 
     Ok(UrlInfo::new("youtube", content_type, "Unknown", None))
+}
+
+/// Create a headless browser instance
+async fn create_headless_browser() -> Result<WebClient, Error> {
+    let caps = serde_json::json!({
+        "goog:chromeOptions": {
+            "args": ["--headless", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
+        }
+    });
+    
+    let client = ClientBuilder::native()
+        .capabilities(caps)
+        .connect("http://localhost:4444")
+        .await?;
+    
+    Ok(client)
+}
+
+/// Scrape a YouTube video using WebDriver
+async fn scrape_youtube_video(client: &WebClient, url: &str) -> Result<(String, String, Vec<String>), Error> {
+    // Navigate to the video URL
+    client.goto(url).await?;
+    
+    // Wait for the page to load
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    
+    // Extract the video title
+    let title = client.find(Locator::Css("h1.title")).await?
+        .text().await?;
+    
+    // Try to click "Show more" button if it exists to expand the description
+    if let Ok(show_more_button) = client.find(Locator::Css("tp-yt-paper-button#expand")).await {
+        let _ = show_more_button.click().await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    } else if let Ok(show_more_button) = client.find(Locator::Css("button[aria-label='Show more']")).await {
+        let _ = show_more_button.click().await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    
+    // Extract the description
+    let description = match client.find(Locator::Css("#description-inner")).await {
+        Ok(desc_element) => desc_element.text().await?,
+        Err(_) => {
+            // Try alternative selectors
+            match client.find(Locator::Css("#description")).await {
+                Ok(desc_element) => desc_element.text().await?,
+                Err(_) => "No description found".to_string()
+            }
+        }
+    };
+    
+    // Extract tracklist from description
+    let tracklist = extract_tracklist_from_description(&description);
+    
+    // Format the video title for folder name
+    let formatted_title = sanitize_filename(&title);
+    info!("Formatted video title: {}", formatted_title);
+    
+    Ok((title, description, tracklist))
+}
+
+/// Scrape a YouTube channel using WebDriver
+async fn scrape_youtube_channel(client: &WebClient, url: &str, confidence: f32) -> Result<(u32, Vec<(String, String, Vec<String>)>), Error> {
+    // Navigate to the channel videos page
+    client.goto(url).await?;
+    
+    // Wait for the page to load
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    
+    // Extract channel name
+    let channel_name = match client.find(Locator::Css("#channel-name")).await {
+        Ok(element) => element.text().await?,
+        Err(_) => "Unknown Channel".to_string()
+    };
+    
+    // Scroll down to load more videos
+    for _ in 0..5 {
+        client.execute("window.scrollTo(0, document.body.scrollHeight)").await?;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    
+    // Extract video count
+    let video_count_text = match client.find(Locator::Css("#videos-count")).await {
+        Ok(element) => element.text().await?,
+        Err(_) => {
+            // Try alternative selector
+            match client.find(Locator::Css("yt-formatted-string.ytd-channel-name")).await {
+                Ok(element) => element.text().await?,
+                Err(_) => "0 videos".to_string()
+            }
+        }
+    };
+    
+    // Parse video count
+    let video_count_regex = Regex::new(r"(\d+)").unwrap();
+    let video_count = match video_count_regex.captures(&video_count_text) {
+        Some(caps) => caps[1].parse::<u32>().unwrap_or(0),
+        None => 0
+    };
+    
+    info!("Found {} videos for channel {}", video_count, channel_name);
+    
+    // Extract video elements
+    let video_elements = client.find_all(Locator::Css("ytd-grid-video-renderer")).await?;
+    
+    let mut videos_with_tracklists = Vec::new();
+    
+    // Process each video (limit to first 10 for performance)
+    for (i, video_element) in video_elements.iter().enumerate().take(10) {
+        // Extract video title
+        let title = match video_element.find(Locator::Css("#video-title")).await {
+            Ok(title_element) => title_element.text().await?,
+            Err(_) => continue
+        };
+        
+        // Extract video URL
+        let href = match video_element.find(Locator::Css("#video-title")).await {
+            Ok(title_element) => match title_element.attr("href").await? {
+                Some(href) => href,
+                None => continue
+            },
+            Err(_) => continue
+        };
+        
+        let video_url = if href.starts_with("http") {
+            href
+        } else {
+            format!("https://www.youtube.com{}", href)
+        };
+        
+        info!("Scraping video {} of {}: {}", i + 1, video_count.min(10), title);
+        
+        // Create a new browser instance to scrape the video
+        let video_client = create_headless_browser().await?;
+        let (_, _, tracklist) = scrape_youtube_video(&video_client, &video_url).await?;
+        video_client.close().await?;
+        
+        // Add the video with its tracklist
+        videos_with_tracklists.push((title, video_url, tracklist));
+    }
+    
+    Ok((video_count, videos_with_tracklists))
+}
+
+/// Scrape a YouTube playlist using WebDriver
+async fn scrape_youtube_playlist(client: &WebClient, url: &str, confidence: f32) -> Result<(String, u32, Vec<(String, String, Vec<String>)>), Error> {
+    // Navigate to the playlist page
+    client.goto(url).await?;
+    
+    // Wait for the page to load
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    
+    // Extract playlist title
+    let playlist_title = match client.find(Locator::Css("h1.title")).await {
+        Ok(element) => element.text().await?,
+        Err(_) => "Unknown Playlist".to_string()
+    };
+    
+    // Scroll down to load more videos
+    for _ in 0..5 {
+        client.execute("window.scrollTo(0, document.body.scrollHeight)").await?;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    
+    // Extract video elements
+    let video_elements = client.find_all(Locator::Css("ytd-playlist-video-renderer")).await?;
+    let video_count = video_elements.len() as u32;
+    
+    info!("Found {} videos in playlist {}", video_count, playlist_title);
+    
+    let mut videos_with_tracklists = Vec::new();
+    
+    // Process each video (limit to first 10 for performance)
+    for (i, video_element) in video_elements.iter().enumerate().take(10) {
+        // Extract video title
+        let title = match video_element.find(Locator::Css("#video-title")).await {
+            Ok(title_element) => title_element.text().await?,
+            Err(_) => continue
+        };
+        
+        // Extract video URL
+        let href = match video_element.find(Locator::Css("#video-title")).await {
+            Ok(title_element) => match title_element.attr("href").await? {
+                Some(href) => href,
+                None => continue
+            },
+            Err(_) => continue
+        };
+        
+        let video_url = if href.starts_with("http") {
+            href
+        } else {
+            format!("https://www.youtube.com{}", href)
+        };
+        
+        info!("Scraping video {} of {}: {}", i + 1, video_count.min(10), title);
+        
+        // Create a new browser instance to scrape the video
+        let video_client = create_headless_browser().await?;
+        let (_, _, tracklist) = scrape_youtube_video(&video_client, &video_url).await?;
+        video_client.close().await?;
+        
+        // Add the video with its tracklist
+        videos_with_tracklists.push((title, video_url, tracklist));
+    }
+    
+    Ok((playlist_title, video_count, videos_with_tracklists))
+}
+
+/// Convert a title to a valid folder name
+fn sanitize_filename(filename: &str) -> String {
+    // Replace invalid characters with spaces
+    let invalid_chars = Regex::new(r#"[<>:"/\\|?*]"#).unwrap();
+    let sanitized = invalid_chars.replace_all(filename, " ").to_string();
+    
+    // Trim leading/trailing whitespace and dots
+    let trimmed = sanitized.trim().trim_matches('.');
+    
+    // Normalize multiple spaces to a single space
+    let normalized = Regex::new(r"\s+").unwrap().replace_all(&trimmed, " ").to_string();
+    
+    // Ensure the filename is not empty
+    if normalized.is_empty() {
+        return "Unknown_Title".to_string();
+    }
+    
+    normalized
 }
 /// Get YouTube channel information using direct HTTP request approach
 fn get_youtube_channel_info(videos_url: &str) -> Result<(u32, Vec<(String, String, Vec<String>)>), Error> {
@@ -170,25 +462,7 @@ fn get_youtube_channel_info(videos_url: &str) -> Result<(u32, Vec<(String, Strin
     
     // If no videos with tracklists were found, add sample tracklists for demonstration
     if videos_with_tracklists.iter().all(|(_, _, tracklist)| tracklist.is_empty()) {
-        println!("  No tracklists found in any videos, adding sample tracklists for demonstration");
-        
-        // Add sample tracklists to the first video if available
-        if !videos_with_tracklists.is_empty() {
-            let sample_tracklist = vec![
-                "00:00 Milan93 - Just To Relax (Cabriolet)".to_string(),
-                "03:09 Baka G - Delta Leonids".to_string(),
-                "06:57 ColorJaxx - When You Find".to_string(),
-                "10:44 Stogov & Gilista - Sunset Mood".to_string(),
-                "15:05 Sebb Junior - A Piece Of Me".to_string(),
-                "20:20 Le Hutin, Lay - I Hear 'Em Voices".to_string(),
-                "24:47 Scott Diaz - In These Stars".to_string(),
-                "29:57 Mindeliq - Stray Cats (55 Music)".to_string(),
-            ];
-            
-            // Update the first video with the sample tracklist
-            videos_with_tracklists[0].2 = sample_tracklist;
-            println!("  Added sample tracklist to video 1");
-        }
+        println!("  No tracklists found in videos");
     }
     
     // Return the video count and the videos with tracklists

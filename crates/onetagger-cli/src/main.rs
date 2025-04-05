@@ -89,84 +89,65 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             info!("Tagging finished, took: {} seconds.", (timestamp!() - start) / 1000);
         },
-        Actions::QueryUrl { url, confidence } => {
-            match onetagger_songdownloader::get_url_info_with_confidence(url, *confidence) {
-                Ok(info) => {
-                    println!("\nChannel: {}", info.title);
-                    if let Some(desc) = info.description {
-                        println!("{}", desc);
-                    }
-                    if let Some(videos) = info.videos {
-                        println!("\nVideos:");
-                        for (i, (title, video_url, tracklist)) in videos.iter().enumerate() {
-                            println!("{}. {} - {}", i + 1, title, video_url);
-                            
-                            // Display tracklist if available
-                            if !tracklist.is_empty() {
-                                println!("   Tracklist ({} tracks):", tracklist.len());
-                                for (j, track) in tracklist.iter().enumerate() {
-                                    println!("     {}. {}", j + 1, track);
-                                }
-                                println!(); // Add a blank line after tracklist
-                            }
-                        }
-                    }
+        Actions::QueryUrl { url, directory, confidence, output_format } => {
+            // Check if directory exists if provided
+            if let Some(dir) = &directory {
+                let dir_path = std::path::Path::new(dir);
+                if !dir_path.exists() {
+                    return Err(anyhow::anyhow!("Directory does not exist: {:?}", dir_path).into());
+                }
+            }
+            
+            // Create SongDownloader instance
+            let mut downloader = onetagger_songdownloader::SongDownloader::new()
+                .with_url(url)
+                .with_confidence(*confidence);
+            
+            if let Some(dir) = &directory {
+                downloader = downloader.with_directory(std::path::Path::new(dir));
+            }
+            
+            if let Some(format) = output_format {
+                downloader = downloader.with_output_format(format);
+            }
+            
+            // Query URL and generate output file
+            match downloader.query_url() {
+                Ok(output_file) => {
+                    println!("\nURL information processed successfully!");
+                    println!("Output file generated: {:?}", output_file);
+                    println!("\nUse the download-songs command with this file to download the songs.");
                 }
                 Err(e) => {
-                    return Err(anyhow::anyhow!("Failed to get URL information: {}", e).into());
+                    return Err(anyhow::anyhow!("Failed to process URL: {}", e).into());
                 }
             }
         },
-        Actions::SongDownloader { url, output, confidence, enable_auto_tag, auto_tag_config, enable_audio_features, client_id, client_secret } => {
-            info!("Starting song downloader for URL: {}", url);
-            
-            // Get the path to the Python script
-            let script_path = std::env::current_dir()?
-                .join("YoutubeToSpotify")
-                .join("downloader.py");
-            
-            // Check if the script exists
-            if !script_path.exists() {
-                return Err(anyhow::anyhow!("Song downloader script not found at {:?}", script_path).into());
+        Actions::DownloadSongs { csv_file, directory } => {
+            // Check if directory exists
+            let dir_path = std::path::Path::new(&directory);
+            if !dir_path.exists() {
+                return Err(anyhow::anyhow!("Directory does not exist: {:?}", directory).into());
             }
             
-            // Create the output directory if it doesn't exist
-            std::fs::create_dir_all(output)?;
+            // Check if CSV file exists
+            let csv_path = std::path::Path::new(&csv_file);
+            if !csv_path.exists() {
+                return Err(anyhow::anyhow!("CSV file does not exist: {:?}", csv_file).into());
+            }
             
-            // Build the command
-            let mut cmd = std::process::Command::new("python");
-            cmd.arg(&script_path)
-                .arg("--url").arg(url)
-                .arg("--output").arg(output)
-                .arg("--confidence").arg(confidence.to_string());
+            // Create SongDownloader instance
+            let downloader = onetagger_songdownloader::SongDownloader::new()
+                .with_directory(dir_path);
             
-            // Add optional flags
-            if *enable_auto_tag {
-                cmd.arg("--enable-auto-tag");
-                if let Some(config) = auto_tag_config {
-                    cmd.arg("--auto-tag-config").arg(config);
+            // Download songs
+            match downloader.download_songs(csv_path) {
+                Ok(_) => {
+                    println!("\nSongs downloaded successfully!");
                 }
-            }
-            
-            if *enable_audio_features {
-                cmd.arg("--enable-audio-features");
-                if let (Some(id), Some(secret)) = (client_id, client_secret) {
-                    cmd.arg("--client-id").arg(id)
-                       .arg("--client-secret").arg(secret);
-                } else {
-                    return Err(anyhow::anyhow!("Spotify client ID and secret are required for audio features").into());
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Failed to download songs: {}", e).into());
                 }
-            }
-            
-            // Run the command
-            let output = cmd.output()?;
-            
-            if output.status.success() {
-                info!("Songs downloaded successfully!");
-                println!("{}", String::from_utf8_lossy(&output.stdout));
-            } else {
-                error!("Failed to download songs: {}", String::from_utf8_lossy(&output.stderr));
-                return Err(anyhow::anyhow!("Failed to download songs").into());
             }
         },
         // Spotify OAuth flow
@@ -373,49 +354,33 @@ enum Actions {
         #[clap(long)]
         no_subfolders: bool,
     },
-    /// Query information about a URL without downloading
+    /// Query information about a URL and generate a CSV/JSON file for downloading
     QueryUrl {
         /// URL to query (YouTube, Spotify, or SoundCloud)
         #[clap(short, long)]
         url: String,
         
+        /// Directory to check for existing folders (optional)
+        #[clap(short, long)]
+        directory: Option<String>,
+        
         /// Shazam confidence threshold (0.0-1.0)
         #[clap(long, default_value = "0.75")]
         confidence: f32,
+        
+        /// Output format (csv or json)
+        #[clap(long)]
+        output_format: Option<String>,
     },
-    /// Download songs from YouTube videos or playlists
-    SongDownloader {
-        /// YouTube URL (channel, playlist, or video)
+    /// Download songs from a CSV/JSON file generated by query-url
+    DownloadSongs {
+        /// Path to the CSV/JSON file generated by query-url
         #[clap(short, long)]
-        url: String,
+        csv_file: PathBuf,
         
-        /// Output directory to save downloaded songs
+        /// Directory where songs will be downloaded
         #[clap(short, long)]
-        output: PathBuf,
-        
-        /// Shazam confidence threshold (0.0-1.0)
-        #[clap(long, default_value = "0.75")]
-        confidence: f32,
-        
-        /// Enable auto-tagging of downloaded songs
-        #[clap(long)]
-        enable_auto_tag: bool,
-        
-        /// Path to auto-tag configuration file
-        #[clap(long)]
-        auto_tag_config: Option<PathBuf>,
-        
-        /// Enable audio features analysis
-        #[clap(long)]
-        enable_audio_features: bool,
-        
-        /// Spotify Client ID (required for audio features)
-        #[clap(long)]
-        client_id: Option<String>,
-        
-        /// Spotify Client Secret (required for audio features)
-        #[clap(long)]
-        client_secret: Option<String>,
+        directory: PathBuf,
     },
     /// Authorize Spotify and cache the token
     AuthorizeSpotify {
