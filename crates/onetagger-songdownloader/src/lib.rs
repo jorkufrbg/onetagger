@@ -1,4 +1,4 @@
-#[macro_use] extern crate anyhow;
+extern crate anyhow;
 
 use serde::{Serialize, Deserialize};
 use std::path::{Path, PathBuf};
@@ -55,19 +55,29 @@ impl SongDownloader {
     
     /// Query a URL and generate output file
     pub fn query_url(&self) -> Result<PathBuf, anyhow::Error> {
+        println!("SongDownloader::query_url called");
+        
         let url = self.url.as_ref().ok_or_else(|| anyhow::anyhow!("URL is required"))?;
+        println!("URL: {}", url);
         
         // Get URL information
+        println!("Calling get_query_url_with_confidence with URL: {} and confidence: {}", url, self.confidence);
         let url_info = get_query_url_with_confidence(url, self.confidence)?;
+        println!("URL info retrieved successfully");
         
         // Create output directory if it doesn't exist
         let output_dir = PathBuf::from("query-url-output");
+        println!("Output directory: {:?}", output_dir);
         if !output_dir.exists() {
+            println!("Creating output directory");
             std::fs::create_dir_all(&output_dir)?;
         }
         
         // Generate output file
-        generate_output_file(&url_info, &output_dir, self.directory.as_deref(), &self.output_format)
+        println!("Generating output file");
+        let result = generate_output_file(&url_info, &output_dir, self.directory.as_deref(), &self.output_format);
+        println!("Output file generation result: {:?}", result);
+        result
     }
     
     /// Download songs from a CSV/JSON file

@@ -2,7 +2,7 @@ use anyhow::{Error, Result, bail};
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::process::Command;
-use log::{info, warn, error, debug};
+use log::{info, warn};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use regex::Regex;
