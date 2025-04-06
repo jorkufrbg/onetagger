@@ -48,6 +48,8 @@ pub fn download_songs(csv_path: &Path, directory: &Path) -> Result<(), Error> {
             .push(song);
     }
     
+    info!("Processing {} videos", songs_by_video.len());
+    
     // Process each video
     for (video_title, songs) in songs_by_video {
         info!("Processing video: {}", video_title);
@@ -57,20 +59,23 @@ pub fn download_songs(csv_path: &Path, directory: &Path) -> Result<(), Error> {
         let video_folder = directory.join(&folder_name);
         
         // Check if folder exists, create if not
-        if !video_folder.exists() {
+        let folder_existed = video_folder.exists();
+        if !folder_existed {
             info!("Creating folder: {:?}", video_folder);
             fs::create_dir_all(&video_folder)?;
         } else {
             info!("Folder already exists: {:?}", video_folder);
         }
         
-        // Filter songs that need to be downloaded
+        // Filter songs that were marked for download 
+        // Logic fix: if downloaded flag is false, it means we should download it
+        // We also respect folder_existed - if folder already exists, we skip songs
         let songs_to_download: Vec<&SongInfo> = songs.iter()
-            .filter(|song| song.downloaded)
+            .filter(|song| !song.downloaded && (!folder_existed || song.match_confidence > 0.5))
             .collect();
         
         if songs_to_download.is_empty() {
-            info!("No songs marked for download in this video");
+            info!("No songs to download in this video");
             continue;
         }
         
@@ -78,8 +83,14 @@ pub fn download_songs(csv_path: &Path, directory: &Path) -> Result<(), Error> {
         
         // Download each song
         for song in songs_to_download {
-            download_song(song, &video_folder)?;
+            match download_song(song, &video_folder) {
+                Ok(_) => info!("Successfully downloaded: {} - {}", song.artist, song.song_title),
+                Err(e) => warn!("Failed to download song {} - {}: {}", song.artist, song.song_title, e),
+            }
         }
+        
+        // Return to original directory for next video
+        info!("Completed processing video: {}", video_title);
     }
     
     info!("Song download process completed");
@@ -91,23 +102,88 @@ fn download_song(song: &SongInfo, output_folder: &Path) -> Result<(), Error> {
     let song_query = format!("{} - {}", song.artist, song.song_title);
     info!("Downloading song: {}", song_query);
     
+    // Sanitize the song query to make it safe for command line
+    let safe_query = sanitize_query(&song_query);
+    
+    // Check if song already exists in the folder
+    let song_exists = check_if_song_exists(output_folder, &song.artist, &song.song_title)?;
+    if song_exists {
+        info!("Song already exists in folder, skipping: {}", song_query);
+        return Ok(());
+    }
+    
     // Try to download using yt-dlp with YouTube Music
-    let result = download_with_ytdlp(&song_query, output_folder);
+    info!("Attempting to download with yt-dlp: {}", safe_query);
+    let result = download_with_ytdlp(&safe_query, output_folder);
     
     if result.is_err() {
         // Fallback to spotdl if yt-dlp fails
-        warn!("yt-dlp failed, trying spotdl");
-        download_with_spotdl(&song_query, output_folder)?;
+        warn!("yt-dlp failed for {}, trying spotdl", safe_query);
+        match download_with_spotdl(&safe_query, output_folder) {
+            Ok(_) => {
+                info!("Successfully downloaded with spotdl: {}", safe_query);
+            },
+            Err(e) => {
+                warn!("Both yt-dlp and spotdl failed for {}: {}", safe_query, e);
+                return Err(e);
+            }
+        }
+    } else {
+        info!("Successfully downloaded with yt-dlp: {}", safe_query);
     }
     
-    info!("Successfully downloaded: {}", song_query);
     Ok(())
+}
+
+/// Sanitize a query for command line safety
+fn sanitize_query(query: &str) -> String {
+    // Replace special characters that could cause issues in command line
+    let sanitized = query
+        .replace("\"", "")
+        .replace("'", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace("[", "")
+        .replace("]", "")
+        .replace("&", "and")
+        .replace("|", "-");
+    
+    sanitized
+}
+
+/// Check if a song already exists in the folder
+fn check_if_song_exists(folder: &Path, artist: &str, title: &str) -> Result<bool, Error> {
+    if !folder.exists() {
+        return Ok(false);
+    }
+    
+    // Get all mp3 files in the folder
+    let entries = fs::read_dir(folder)?;
+    
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        
+        if path.is_file() && path.extension().map_or(false, |ext| ext == "mp3") {
+            let filename = path.file_name().unwrap().to_string_lossy().to_lowercase();
+            let artist_lower = artist.to_lowercase();
+            let title_lower = title.to_lowercase();
+            
+            // Check if filename contains both artist and title
+            if filename.contains(&artist_lower) && filename.contains(&title_lower) {
+                return Ok(true);
+            }
+        }
+    }
+    
+    Ok(false)
 }
 
 /// Download a song using yt-dlp
 fn download_with_ytdlp(song_query: &str, output_folder: &Path) -> Result<(), Error> {
     let output_template = output_folder.join("%(title)s.%(ext)s").to_string_lossy().to_string();
     
+    // Build yt-dlp command with YouTube Music search
     let status = Command::new("yt-dlp")
         .args([
             "--extract-audio",
@@ -115,6 +191,8 @@ fn download_with_ytdlp(song_query: &str, output_folder: &Path) -> Result<(), Err
             "--audio-quality", "0",
             "--embed-metadata",
             "--default-search", "ytsearch",
+            "--quiet",
+            "--no-warnings",
             "-o", &output_template,
             &format!("ytsearch:{} youtube music", song_query)
         ])
@@ -129,10 +207,16 @@ fn download_with_ytdlp(song_query: &str, output_folder: &Path) -> Result<(), Err
 
 /// Download a song using spotdl
 fn download_with_spotdl(song_query: &str, output_folder: &Path) -> Result<(), Error> {
+    // Build spotdl command 
     let status = Command::new("spotdl")
         .current_dir(output_folder)
         .args([
-            "--output", "{title}.{ext}",
+            "--output", "{artist} - {title}.{output-ext}",
+            "--output-format", "mp3",
+            "--bitrate", "320k",
+            "--threads", "1",
+            "--format", "mp3",
+            "--print-errors",
             "download",
             song_query
         ])
@@ -206,15 +290,20 @@ pub fn generate_output_file(
                 // Extract artist and title
                 let (artist, title, timestamp) = parse_track(track);
                 
-                songs.push(SongInfo {
-                    video_title: video_title.clone(),
-                    video_url: video_url.clone(),
-                    song_title: title,
-                    artist,
-                    timestamp,
-                    downloaded: !folder_exists, // Mark for download if folder doesn't exist
-                    match_confidence: 0.0, // Will be updated later
-                });
+                // Only add tracks that have both artist and title
+                if !artist.is_empty() && !title.is_empty() {
+                    songs.push(SongInfo {
+                        video_title: video_title.clone(),
+                        video_url: video_url.clone(),
+                        song_title: title,
+                        artist,
+                        timestamp,
+                        // Downloaded flag is false when we want to download it
+                        // If folder exists, we mark as true (downloaded), if not then false (needs download)
+                        downloaded: folder_exists,
+                        match_confidence: 0.75, // Default confidence level
+                    });
+                }
             }
         }
     }
@@ -238,26 +327,72 @@ pub fn generate_output_file(
         path
     };
     
+    // Print summary of what we found
     info!("Generated output file: {:?}", output_file);
+    info!("Found {} songs across {} videos", songs.len(), if let Some(videos) = &url_info.videos { videos.len() } else { 0 });
+    
+    // Count how many songs need to be downloaded
+    let download_count = songs.iter().filter(|s| !s.downloaded).count();
+    info!("{} songs marked for download", download_count);
+    
     Ok(output_file)
 }
 
 /// Parse a track string into artist, title, and timestamp
 fn parse_track(track: &str) -> (String, String, Option<String>) {
-    // Extract timestamp if present
-    let timestamp_regex = Regex::new(r"^(\d{1,2}:\d{2}(?::\d{2})?)").unwrap();
-    let timestamp = timestamp_regex.captures(track).map(|cap| cap[1].to_string());
-    
-    // Remove timestamp from track string
-    let track_without_timestamp = timestamp_regex.replace(track, "").trim().to_string();
-    
-    // Split by dash to get artist and title
-    if let Some(pos) = track_without_timestamp.find(" - ") {
-        let artist = track_without_timestamp[..pos].trim().to_string();
-        let title = track_without_timestamp[pos+3..].trim().to_string();
-        (artist, title, timestamp)
+    // Check if the track is already in the "Artist - Title" format
+    if track.contains(" - ") {
+        // Extract timestamp if present at the beginning
+        let timestamp_regex = Regex::new(r"^(\d{1,2}:\d{2}(?::\d{2})?)").unwrap();
+        let timestamp = timestamp_regex.captures(track).map(|cap| cap[1].to_string());
+        
+        // Clean up the track string
+        let track_without_timestamp = timestamp_regex.replace(track, "").trim().to_string();
+        
+        // Split by dash to get artist and title
+        let parts: Vec<&str> = track_without_timestamp.split(" - ").collect();
+        if parts.len() >= 2 {
+            let artist_part = parts[0].trim();
+            let title_part = parts[1].trim();
+            
+            // Clean up timestamp prefix and other characters in artist name
+            let number_prefix_regex = Regex::new(r"^(\d+(?::\d+)?)\s*").unwrap();
+            let clean_artist = number_prefix_regex.replace(artist_part, "").trim().to_string();
+            
+            // Clean up html entities in both artist and title
+            let artist_clean = clean_artist
+                .replace("u0026", "&")
+                .replace("&amp;", "&")
+                .replace("&#39;", "'")
+                .trim().to_string();
+                
+            let title_clean = title_part
+                .replace("u0026", "&")
+                .replace("&amp;", "&")
+                .replace("&#39;", "'")
+                .trim().to_string();
+            
+            // Special case: if artist starts with comma, it's likely part of another field
+            let final_artist = if artist_clean.starts_with(',') {
+                artist_clean[1..].trim().to_string()
+            } else {
+                artist_clean
+            };
+            
+            // Final checks for empty fields
+            if final_artist.is_empty() || title_clean.is_empty() {
+                // Fallback to original parts if cleaning made fields empty
+                (parts[0].trim().to_string(), parts[1].trim().to_string(), timestamp)
+            } else {
+                (final_artist, title_clean, timestamp)
+            }
+        } else {
+            // Fallback if splitting didn't work as expected
+            (String::new(), track_without_timestamp, timestamp)
+        }
     } else {
-        // If no dash, assume the whole string is the title
-        (String::new(), track_without_timestamp, timestamp)
+        // If no dash, try to identify if this is just an artist or just a title
+        // For now, default to treating the whole string as the title
+        (String::new(), track.trim().to_string(), None)
     }
 }
