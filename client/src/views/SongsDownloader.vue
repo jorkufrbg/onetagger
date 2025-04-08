@@ -18,8 +18,9 @@
         v-model="url"
         :rules="[
           (val) =>
-            (val && val.includes('youtube.com')) ||
-            'Please enter a valid YouTube URL',
+            (val && (val.includes('youtube.com') || val.includes('youtu.be') || 
+                    val.includes('spotify.com') || val.includes('soundcloud.com'))) ||
+            'Please enter a valid YouTube, Spotify, or SoundCloud URL',
         ]"
       >
       </q-input>
@@ -196,7 +197,7 @@
     </div>
 
     <!-- Query Status and Results -->
-    <div v-if="isQuerying || foundSongs.length > 0" class="q-mt-xl">
+    <div v-if="isQuerying || foundVideos.length > 0" class="q-mt-xl">
       <!-- Status Messages -->
       <div v-if="isQuerying" class="text-subtitle2 text-bold text-primary">
         QUERY STATUS
@@ -206,35 +207,183 @@
         {{ queryStatus }}
       </div>
 
-      <!-- Found Songs List -->
+      <!-- Found Videos with Songs List -->
       <div
-        v-if="foundSongs.length > 0"
+        v-if="foundVideos.length > 0"
         class="text-subtitle2 text-bold text-primary q-mt-md"
       >
-        FOUND SONGS
+        FOUND VIDEOS/PLAYLISTS
       </div>
       <div
-        v-if="foundSongs.length > 0"
+        v-if="foundVideos.length > 0"
         class="row justify-center q-mt-sm"
-        style="max-width: 725px; margin: auto"
+        style="max-width: 800px; margin: auto"
       >
-        <div class="col-10">
+        <div class="col-12">
+          <!-- Bulk Actions Bar -->
+          <div class="row q-mb-md justify-center">
+            <div class="col-10 row justify-between items-center bg-dark rounded-borders q-pa-sm">
+              <div>
+                <q-btn
+                  flat
+                  dense
+                  color="primary"
+                  label="Select All"
+                  @click="selectAllSongs(true)"
+                  class="q-mx-xs"
+                  size="sm"
+                />
+                <q-btn
+                  flat
+                  dense
+                  color="primary"
+                  label="Deselect All"
+                  @click="selectAllSongs(false)"
+                  class="q-mx-xs"
+                  size="sm"
+                />
+                <q-btn
+                  flat
+                  dense
+                  color="primary"
+                  label="Expand All"
+                  @click="expandAllVideos(true)"
+                  class="q-mx-xs"
+                  size="sm"
+                />
+                <q-btn
+                  flat
+                  dense
+                  color="primary"
+                  label="Collapse All"
+                  @click="expandAllVideos(false)"
+                  class="q-mx-xs"
+                  size="sm"
+                />
+              </div>
+              <div class="text-caption">
+                {{ getSelectedSongsCount() }} of {{ totalSongsCount }} songs selected
+              </div>
+            </div>
+          </div>
+
+          <!-- Videos & Songs List -->
           <q-list bordered separator class="bg-dark rounded-borders">
-            <q-item v-for="(song, index) in foundSongs" :key="index">
-              <q-item-section avatar>
-                <q-checkbox v-model="song.selected" />
-              </q-item-section>
-              <q-item-section>
-                <q-item-label>{{ song.title }}</q-item-label>
-                <q-item-label caption>{{ song.artist }}</q-item-label>
-                <q-item-label caption v-if="song.source" class="text-primary">
-                  Source: {{ song.source }}
-                </q-item-label>
-              </q-item-section>
-            </q-item>
+            <div v-for="(video, videoIndex) in foundVideos" :key="videoIndex">
+              <!-- Video Header - Expandable -->
+              <q-expansion-item
+                v-model="video.expanded"
+                :icon="getPlatformIcon(video.source_url)"
+                :label="video.title"
+                header-class="video-header"
+                expand-icon-class="text-primary"
+              >
+                <template v-slot:header>
+                  <q-item-section avatar>
+                    <q-checkbox 
+                      v-model="video.allSelected" 
+                      @update:model-value="toggleAllSongsInVideo(videoIndex)"
+                    />
+                  </q-item-section>
+                  
+                  <q-item-section>
+                    <q-item-label class="ellipsis-2-lines">{{ video.title }}</q-item-label>
+                    <q-item-label caption class="text-grey-5">
+                      {{ video.songs.length }} songs · {{ getPlatformName(video.source_url) }}
+                    </q-item-label>
+                  </q-item-section>
+                  
+                  <q-item-section side>
+                    <q-btn
+                      flat
+                      round
+                      dense
+                      color="primary"
+                      icon="mdi-link"
+                      @click.stop="openSourceUrl(video.source_url)"
+                    >
+                      <q-tooltip>Open source URL</q-tooltip>
+                    </q-btn>
+                  </q-item-section>
+                </template>
+
+                <!-- Song List for this Video -->
+                <q-list separator>
+                  <q-item v-for="(song, songIndex) in video.songs" :key="songIndex">
+                    <q-item-section avatar>
+                      <q-checkbox 
+                        v-model="song.selected" 
+                        @update:model-value="updateVideoSelectStatus(videoIndex)" 
+                      />
+                    </q-item-section>
+                    
+                    <q-item-section>
+                      <div class="row no-wrap">
+                        <div class="col-12 col-sm-6 q-pr-md">
+                          <q-input 
+                            dense 
+                            v-model="song.title" 
+                            label="Title" 
+                            class="q-mb-xs"
+                            stack-label
+                          />
+                        </div>
+                        <div class="col-12 col-sm-6">
+                          <q-input 
+                            dense 
+                            v-model="song.artist" 
+                            label="Artist" 
+                            class="q-mb-xs"
+                            stack-label
+                          />
+                        </div>
+                      </div>
+                      
+                      <div class="row items-center q-mt-xs">
+                        <q-chip 
+                          v-if="song.timestamp" 
+                          size="sm" 
+                          dense 
+                          class="text-caption"
+                          color="secondary"
+                          text-color="white"
+                        >
+                          {{ formatTimestamp(song.timestamp) }}
+                        </q-chip>
+                        
+                        <q-chip 
+                          v-if="song.match_confidence" 
+                          size="sm" 
+                          dense 
+                          class="text-caption q-ml-xs"
+                          :color="getConfidenceColor(song.match_confidence)"
+                          text-color="white"
+                        >
+                          {{ Math.round(song.match_confidence * 100) }}% match
+                        </q-chip>
+                        
+                        <div class="q-ml-auto">
+                          <q-btn 
+                            flat 
+                            dense 
+                            round 
+                            color="grey-6" 
+                            icon="mdi-undo" 
+                            size="sm"
+                            @click="resetSong(song, videoIndex, songIndex)"
+                          >
+                            <q-tooltip>Reset to original</q-tooltip>
+                          </q-btn>
+                        </div>
+                      </div>
+                    </q-item-section>
+                  </q-item>
+                </q-list>
+              </q-expansion-item>
+            </div>
           </q-list>
 
-          <div v-if="foundSongs.length > 2000" class="text-negative q-mt-md">
+          <div v-if="totalSongsCount > 2000" class="text-negative q-mt-md text-center">
             Warning: Spotify has a query limit of 2,000 songs per 24 hours,
             which applies to both auto-tagging and audio features.
           </div>
@@ -343,7 +492,7 @@
         </q-card-section>
 
         <q-card-section class="q-pt-none">
-          <div v-if="foundSongs.length > 0">
+          <div v-if="foundVideos.length > 0">
             <div class="text-subtitle1 q-mb-sm">
               Select songs to download:
               <q-btn
@@ -362,6 +511,22 @@
                 @click="selectAllSongs(false)"
                 class="q-ml-sm"
               />
+              <q-btn
+                flat
+                dense
+                color="primary"
+                label="Expand All"
+                @click="expandAllVideos(true)"
+                class="q-ml-sm"
+              />
+              <q-btn
+                flat
+                dense
+                color="primary"
+                label="Collapse All"
+                @click="expandAllVideos(false)"
+                class="q-ml-sm"
+              />
             </div>
 
             <q-list
@@ -370,27 +535,80 @@
               class="bg-dark rounded-borders"
               style="max-height: 60vh; overflow-y: auto"
             >
-              <q-item v-for="(song, index) in foundSongs" :key="index">
-                <q-item-section avatar>
-                  <q-checkbox v-model="song.selected" />
-                </q-item-section>
-                <q-item-section>
-                  <q-item-label>{{ song.title }}</q-item-label>
-                  <q-item-label caption>{{ song.artist }}</q-item-label>
-                  <q-item-label caption v-if="song.source" class="text-primary">
-                    Source: {{ song.source }}
-                  </q-item-label>
-                </q-item-section>
-              </q-item>
+              <div v-for="(video, videoIndex) in foundVideos" :key="videoIndex">
+                <q-expansion-item
+                  v-model="video.expanded"
+                  :icon="getPlatformIcon(video.source_url)"
+                  :label="video.title"
+                  header-class="video-header"
+                  expand-icon-class="text-primary"
+                >
+                  <template v-slot:header>
+                    <q-item-section avatar>
+                      <q-checkbox 
+                        v-model="video.allSelected" 
+                        @update:model-value="toggleAllSongsInVideo(videoIndex)"
+                      />
+                    </q-item-section>
+                    
+                    <q-item-section>
+                      <q-item-label class="ellipsis-2-lines">{{ video.title }}</q-item-label>
+                      <q-item-label caption class="text-grey-5">
+                        {{ video.songs.length }} songs · {{ getPlatformName(video.source_url) }}
+                      </q-item-label>
+                    </q-item-section>
+                  </template>
+
+                  <q-list separator>
+                    <q-item v-for="(song, songIndex) in video.songs" :key="songIndex">
+                      <q-item-section avatar>
+                        <q-checkbox 
+                          v-model="song.selected" 
+                          @update:model-value="updateVideoSelectStatus(videoIndex)" 
+                        />
+                      </q-item-section>
+                      
+                      <q-item-section>
+                        <q-item-label>{{ song.title }}</q-item-label>
+                        <q-item-label caption>{{ song.artist }}</q-item-label>
+                        
+                        <div class="row items-center q-mt-xs">
+                          <q-chip 
+                            v-if="song.timestamp" 
+                            size="sm" 
+                            dense 
+                            class="text-caption"
+                            color="secondary"
+                            text-color="white"
+                          >
+                            {{ formatTimestamp(song.timestamp) }}
+                          </q-chip>
+                          
+                          <q-chip 
+                            v-if="song.match_confidence" 
+                            size="sm" 
+                            dense 
+                            class="text-caption q-ml-xs"
+                            :color="getConfidenceColor(song.match_confidence)"
+                            text-color="white"
+                          >
+                            {{ Math.round(song.match_confidence * 100) }}% match
+                          </q-chip>
+                        </div>
+                      </q-item-section>
+                    </q-item>
+                  </q-list>
+                </q-expansion-item>
+              </div>
             </q-list>
 
-            <div v-if="foundSongs.length > 2000" class="text-negative q-mt-md">
+            <div v-if="totalSongsCount > 2000" class="text-negative q-mt-md">
               Warning: Spotify has a query limit of 2,000 songs per 24 hours,
               which applies to both auto-tagging and audio features.
             </div>
 
             <div class="text-subtitle2 q-mt-md">
-              {{ getSelectedSongsCount() }} of {{ foundSongs.length }} songs
+              {{ getSelectedSongsCount() }} of {{ totalSongsCount }} songs
               selected
             </div>
           </div>
@@ -434,12 +652,24 @@ interface FoundSong {
   video_url: string;
   timestamp?: number;
   selected?: boolean;
-  source?: string;
+  match_confidence?: number;
+  downloaded?: boolean;
+  // Store original values for reset
+  original_title?: string;
+  original_artist?: string;
+}
+
+interface VideoInfo {
+  title: string;
+  source_url: string;
+  songs: FoundSong[];
+  expanded: boolean;
+  allSelected: boolean;
 }
 
 interface IPCResponse {
   action: string;
-  songs?: FoundSong[];
+  videos?: VideoInfo[];
   success?: boolean;
   error?: string;
 }
@@ -466,10 +696,13 @@ const enableAutoTag = ref(false);
 const autoTagConfig = ref("");
 const enableAudioFeatures = ref(false);
 const showConfirmation = ref(false);
-const foundSongs = ref<FoundSong[]>([]);
+const foundVideos = ref<VideoInfo[]>([]);
 const cliDialog = ref(false);
 const isQuerying = ref(false);
 const queryStatus = ref("");
+const totalSongsCount = computed(() => {
+  return foundVideos.value.reduce((total, video) => total + video.songs.length, 0);
+});
 
 // Watch URL changes
 watch(
@@ -562,17 +795,32 @@ $1t.onSongDownloaderEvent = (json: any) => {
   }
 
   // Handle analyzeSongs response
-  if (json.action === "analyzeSongs" && json.songs) {
-    foundSongs.value = json.songs.map((song: any) => ({
-      ...song,
-      selected: true,
-      source: determineSongSource(song),
-    }));
+  if (json.action === "analyzeSongs" && json.videos) {
+    // Convert backend videos data to our UI structure
+    foundVideos.value = json.videos.map((video: any) => {
+      const songsWithMeta = video.songs.map((song: any) => ({
+        ...song,
+        selected: true,
+        // Save original values for reset functionality
+        original_title: song.title,
+        original_artist: song.artist
+      }));
+      
+      return {
+        title: video.title,
+        source_url: video.source_url || video.video_url,
+        songs: songsWithMeta,
+        expanded: true, // Start expanded
+        allSelected: true // Start with all selected
+      };
+    });
 
     isQuerying.value = false;
     $q.loading.hide();
 
-    if (foundSongs.value.length === 0) {
+    const songCount = totalSongsCount.value;
+
+    if (songCount === 0) {
       queryStatus.value = "No songs found.";
       $q.notify({
         type: "warning",
@@ -580,26 +828,38 @@ $1t.onSongDownloaderEvent = (json: any) => {
         position: "top",
       });
     } else {
-      // Update status based on URL type
+      // Update status based on URL type and content
       if (url.value.includes("youtube.com")) {
-        if (urlPreview.value?.contentType === "Channel") {
-          queryStatus.value = `Found YouTube channel ${urlPreview.value.title}, ${foundSongs.value.length} songs extracted.`;
-        } else if (urlPreview.value?.contentType === "Playlist") {
-          queryStatus.value = `Found YouTube playlist ${urlPreview.value.title}, ${foundSongs.value.length} songs extracted.`;
+        if (urlPreview.value?.contentType === "channel") {
+          queryStatus.value = `Found YouTube channel ${urlPreview.value.title} with ${foundVideos.value.length} videos, ${songCount} songs extracted.`;
+        } else if (urlPreview.value?.contentType === "playlist") {
+          queryStatus.value = `Found YouTube playlist ${urlPreview.value.title} with ${foundVideos.value.length} videos, ${songCount} songs extracted.`;
         } else {
-          queryStatus.value = `Found ${foundSongs.value.length} songs from YouTube.`;
+          queryStatus.value = `Found ${songCount} songs from ${foundVideos.value.length} YouTube videos.`;
         }
       } else if (url.value.includes("spotify.com")) {
-        queryStatus.value = `Found ${foundSongs.value.length} songs from Spotify.`;
+        if (urlPreview.value?.contentType === "playlist") {
+          queryStatus.value = `Found Spotify playlist ${urlPreview.value.title} with ${songCount} songs.`;
+        } else if (urlPreview.value?.contentType === "album") {
+          queryStatus.value = `Found Spotify album ${urlPreview.value.title} with ${songCount} songs.`;
+        } else if (urlPreview.value?.contentType === "artist") {
+          queryStatus.value = `Found Spotify artist ${urlPreview.value.title} with ${songCount} songs.`;
+        } else {
+          queryStatus.value = `Found ${songCount} songs from Spotify.`;
+        }
       } else if (url.value.includes("soundcloud.com")) {
-        queryStatus.value = `Found ${foundSongs.value.length} songs from SoundCloud.`;
+        if (urlPreview.value?.contentType === "playlist") {
+          queryStatus.value = `Found SoundCloud playlist with ${songCount} songs.`;
+        } else {
+          queryStatus.value = `Found ${songCount} songs from SoundCloud.`;
+        }
       } else {
-        queryStatus.value = `Found ${foundSongs.value.length} songs.`;
+        queryStatus.value = `Found ${songCount} songs from ${foundVideos.value.length} sources.`;
       }
 
       $q.notify({
         type: "positive",
-        message: `Found ${foundSongs.value.length} songs.`,
+        message: `Found ${songCount} songs from ${foundVideos.value.length} sources.`,
         position: "top",
       });
 
@@ -630,16 +890,16 @@ $1t.onSongDownloaderEvent = (json: any) => {
     $q.loading.hide();
 
     if (json.success) {
-      const selectedSongs = foundSongs.value.filter((song) => song.selected);
+      const selectedCount = getSelectedSongsCount();
       $q.notify({
         type: "positive",
-        message: `${selectedSongs.length} songs downloaded successfully!`,
+        message: `${selectedCount} songs downloaded successfully!`,
         position: "top",
       });
 
       // Reset the song list after successful download
       if (!confirmBeforeDownload.value) {
-        foundSongs.value = [];
+        foundVideos.value = [];
         queryStatus.value = "";
       }
     } else {
@@ -674,7 +934,7 @@ async function queryUrl() {
     console.log("queryUrl function called with URL:", url.value);
 
     // Reset previous results
-    foundSongs.value = [];
+    foundVideos.value = [];
     isQuerying.value = true;
     queryStatus.value = "Analyzing URL...";
 
@@ -711,37 +971,111 @@ async function queryUrl() {
   }
 }
 
-// Helper function to determine song source
-function determineSongSource(song: FoundSong): string {
-  if (song.video_url && song.video_url.includes("youtube.com")) {
-    if (song.timestamp !== undefined) {
-      return "Video description with timestamp";
-    } else {
-      return "Video title/description";
-    }
-  } else if (song.source) {
-    return song.source;
-  } else {
-    return `Shazam (${Math.round(shazamConfidence.value * 100)}% confidence)`;
+// Helper function to determine platform name
+function getPlatformName(url: string): string {
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    return 'YouTube';
+  } else if (url.includes('spotify.com')) {
+    return 'Spotify';
+  } else if (url.includes('soundcloud.com')) {
+    return 'SoundCloud';
+  }
+  return 'Unknown';
+}
+
+// Helper function to get platform icon
+function getPlatformIcon(url: string): string {
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    return 'mdi-youtube';
+  } else if (url.includes('spotify.com')) {
+    return 'mdi-spotify';
+  } else if (url.includes('soundcloud.com')) {
+    return 'mdi-soundcloud';
+  }
+  return 'mdi-music';
+}
+
+// Format a timestamp in seconds to mm:ss format
+function formatTimestamp(timestamp: number | undefined): string {
+  if (!timestamp) return '';
+  
+  const minutes = Math.floor(timestamp / 60);
+  const seconds = Math.floor(timestamp % 60);
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// Get confidence color based on match value
+function getConfidenceColor(confidence: number | undefined): string {
+  if (!confidence) return 'grey';
+  
+  if (confidence >= 0.9) return 'positive';
+  if (confidence >= 0.7) return 'secondary';
+  if (confidence >= 0.5) return 'warning';
+  return 'negative';
+}
+
+// Helper function to select or deselect all songs across all videos
+function selectAllSongs(selected: boolean): void {
+  foundVideos.value.forEach((video) => {
+    video.allSelected = selected;
+    video.songs.forEach((song) => {
+      song.selected = selected;
+    });
+  });
+}
+
+// Helper function to toggle expand/collapse all videos
+function expandAllVideos(expanded: boolean): void {
+  foundVideos.value.forEach((video) => {
+    video.expanded = expanded;
+  });
+}
+
+// Toggle all songs in a specific video
+function toggleAllSongsInVideo(videoIndex: number): void {
+  const video = foundVideos.value[videoIndex];
+  video.songs.forEach((song) => {
+    song.selected = video.allSelected;
+  });
+}
+
+// Update video selection status based on its songs
+function updateVideoSelectStatus(videoIndex: number): void {
+  const video = foundVideos.value[videoIndex];
+  const allSelected = video.songs.every((song) => song.selected);
+  const anySelected = video.songs.some((song) => song.selected);
+  
+  video.allSelected = allSelected;
+  // If indeterminate state is needed, could be implemented here
+}
+
+// Reset a song to its original values
+function resetSong(song: FoundSong, videoIndex: number, songIndex: number): void {
+  if (song.original_title) {
+    song.title = song.original_title;
+  }
+  
+  if (song.original_artist) {
+    song.artist = song.original_artist;
   }
 }
 
-// Helper function to select or deselect all songs
-function selectAllSongs(selected: boolean): void {
-  foundSongs.value.forEach((song) => {
-    song.selected = selected;
-  });
+// Open the source URL in a new tab
+function openSourceUrl(url: string): void {
+  window.open(url, '_blank');
 }
 
 // Helper function to count selected songs
 function getSelectedSongsCount(): number {
-  return foundSongs.value.filter((song) => song.selected).length;
+  return foundVideos.value.reduce((count, video) => {
+    return count + video.songs.filter(song => song.selected).length;
+  }, 0);
 }
 
 async function startDownload() {
   try {
     // If we already have songs from a previous query, use those
-    if (foundSongs.value.length > 0) {
+    if (foundVideos.value.length > 0) {
       if (confirmBeforeDownload.value) {
         showConfirmation.value = true;
       } else {
@@ -753,7 +1087,7 @@ async function startDownload() {
 
     // Otherwise, query for songs first
     // Reset previous results
-    foundSongs.value = [];
+    foundVideos.value = [];
     isQuerying.value = true;
     queryStatus.value = "Analyzing URL...";
 
@@ -786,8 +1120,23 @@ async function startDownload() {
 
 async function confirmDownload() {
   try {
-    // Filter only selected songs
-    const selectedSongs = foundSongs.value.filter((song) => song.selected);
+    // Collect all selected songs from all videos
+    const selectedSongs = [];
+    
+    for (const video of foundVideos.value) {
+      for (const song of video.songs) {
+        if (song.selected) {
+          selectedSongs.push({
+            title: song.title,
+            artist: song.artist,
+            video_url: video.source_url,
+            timestamp: song.timestamp,
+            match_confidence: song.match_confidence,
+            // Add any other fields needed by the backend
+          });
+        }
+      }
+    }
 
     if (selectedSongs.length === 0) {
       $q.notify({
@@ -799,7 +1148,7 @@ async function confirmDownload() {
     }
 
     $q.loading.show({
-      message: "Downloading selected songs...",
+      message: `Downloading ${selectedSongs.length} selected songs...`,
     });
 
     // Call the backend to download songs
@@ -865,5 +1214,25 @@ async function confirmDownload() {
 
 :deep(.q-field--filled .q-field__control:hover) {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.video-header {
+  transition: background-color 0.3s;
+}
+
+.video-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ellipsis-2-lines {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:deep(.q-expansion-item__content) {
+  background: rgba(255, 255, 255, 0.02);
 }
 </style>
