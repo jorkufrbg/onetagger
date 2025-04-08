@@ -4,7 +4,7 @@
     <div class="text-subtitle2 text-bold text-primary">ENTER URL</div>
     <div class="text-subtitle2 q-mb-md text-grey-6">
       Provide a URL for a YouTube channel, playlist, or video, or for Spotify,
-      YouTube, or SoundCloud.
+      YouTube, 1001tracklists, or SoundCloud.
     </div>
     <div
       class="row justify-center input"
@@ -29,8 +29,8 @@
           class="path-tooltip q-mx-sm q-pt-md q-mt-xs"
         >
           <q-tooltip
-            >Submit a YouTube, Spotify, or SoundCloud URL to analyze the songs
-            within.</q-tooltip
+            >Submit a YouTube, Spotify, 1001tracklists, or SoundCloud URL to
+            analyze the songs within.</q-tooltip
           >
         </q-icon>
       </div>
@@ -485,6 +485,7 @@ watch(
       newUrlValue.includes("youtube.com") || newUrlValue.includes("youtu.be");
     const isSpotify = newUrlValue.includes("spotify.com");
     const isSoundcloud = newUrlValue.includes("soundcloud.com");
+    const is1001tracklist = newUrlValue.includes("1001tracklists.com");
 
     if (!isYoutube && !isSpotify && !isSoundcloud) {
       urlPreview.value = null;
@@ -551,6 +552,7 @@ const isValid = computed(() => {
   const isValidUrl =
     url.value.includes("youtube.com") ||
     url.value.includes("spotify.com") ||
+    url.value.includes("1001tracklists.com") ||
     url.value.includes("soundcloud.com");
   return isValidUrl;
 });
@@ -593,6 +595,8 @@ $1t.onSongDownloaderEvent = (json: any) => {
         queryStatus.value = `Found ${foundSongs.value.length} songs from Spotify.`;
       } else if (url.value.includes("soundcloud.com")) {
         queryStatus.value = `Found ${foundSongs.value.length} songs from SoundCloud.`;
+      } else if (url.value.includes("1001tracklists.com")) {
+        queryStatus.value = `Found ${foundSongs.value.length} songs from 1001 Tracklists.`;
       } else {
         queryStatus.value = `Found ${foundSongs.value.length} songs.`;
       }

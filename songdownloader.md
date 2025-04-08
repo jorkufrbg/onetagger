@@ -17,7 +17,7 @@ cargo build --release
   - Spotify
   - SoundCloud
 - **Validation Rules**:
-  - Must contain one of: `youtube.com`, `youtu.be`, `spotify.com`, `soundcloud.com`
+  - Must contain one of: `youtube.com`, `1001tracklists.com`, `youtu.be`, `spotify.com`, `soundcloud.com`
   - Script will terminate if validation fails
 
 ### Directory Parameter

@@ -356,7 +356,7 @@ enum Actions {
     },
     /// Query information about a URL and generate a CSV/JSON file for downloading
     QueryUrl {
-        /// URL to query (YouTube, Spotify, or SoundCloud)
+        /// URL to query (YouTube, 1001tracklists, Spotify, or SoundCloud)
         #[clap(short, long)]
         url: String,
         

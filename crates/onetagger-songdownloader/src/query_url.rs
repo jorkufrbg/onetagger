@@ -23,7 +23,7 @@ pub fn get_query_url_with_confidence(url: &str, confidence: f32) -> Result<UrlIn
     // Validate URL
     if !is_valid_url(url) {
         println!("Invalid URL: {}", url);
-        bail!("Invalid URL. Must be a YouTube, Spotify, or SoundCloud URL.");
+        bail!("Invalid URL. Must be a YouTube, 1001tracklists, Spotify, or SoundCloud URL.");
     }
 
     // Determine platform and content type
@@ -59,7 +59,7 @@ pub fn get_query_url_with_confidence(url: &str, confidence: f32) -> Result<UrlIn
     }
 }
 
-/// Check if the URL is valid (YouTube, Spotify, or SoundCloud)
+/// Check if the URL is valid (YouTube, 1001tracklists, Spotify, or SoundCloud)
 fn is_valid_url(url: &str) -> bool {
     let valid_domains = ["youtube.com", "youtu.be", "spotify.com", "soundcloud.com"];
     valid_domains.iter().any(|&domain| url.contains(domain))
