@@ -17,8 +17,8 @@ html-escape = "0.2"
 thirtyfour = "0.31"
 tempfile = "3.8"
 url = "2.4"
-chrono = { workspace = true }
-rustc-serialize = { workspace = true }
+chrono = "0.4"
+rustc-serialize = "0.3"
 # We'll rely on transitive dependency for rspotify through onetagger-platforms
 onetagger-platforms = { path = "../onetagger-platforms" }
 onetagger-shared = { path = "../onetagger-shared" }

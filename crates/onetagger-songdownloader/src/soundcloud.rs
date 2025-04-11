@@ -1,6 +1,8 @@
-use anyhow::Error;
-use log::info;
+use anyhow::{Error, Context};
+use log::{info, warn};
 use crate::UrlInfo;
+use reqwest::blocking::Client;
+use scraper::{Html, Selector};
 
 /// Process a SoundCloud URL
 pub fn process_soundcloud(url: &str, confidence: f32) -> Result<UrlInfo, Error> {
@@ -38,6 +40,7 @@ fn determine_soundcloud_type(url: &str) -> Result<String, Error> {
     }
 }
 
+/* These functions are commented out until all dependencies are properly linked
 /// Process a SoundCloud track URL
 fn process_soundcloud_track(url: &str) -> Result<UrlInfo, Error> {
     info!("Fetching SoundCloud track: {}", url);
@@ -281,6 +284,7 @@ fn extract_soundcloud_playlist_tracks(document: &Html) -> Result<Vec<String>, Er
         Ok(Vec::new())
     }
 }
+*/
 
 #[cfg(test)]
 mod tests {

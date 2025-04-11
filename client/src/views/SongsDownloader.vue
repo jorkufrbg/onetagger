@@ -69,30 +69,6 @@
       </q-icon>
     </div>
 
-    <!-- Query URL Button -->
-    <div
-      class="row justify-center q-mt-md"
-      style="max-width: 550px; margin: auto"
-    >
-      <q-btn
-        color="secondary"
-        label="Query URL"
-        :disable="!url"
-        @click="queryUrl"
-        push
-        class="q-mb-lg"
-      />
-      <q-icon
-        name="mdi-help-circle-outline text-grey-6"
-        class="q-pt-md q-mx-sm"
-      >
-        <q-tooltip>
-          Query the URL to find songs before downloading. This will analyze the
-          content and show you what songs were found.
-        </q-tooltip>
-      </q-icon>
-    </div>
-
     <!-- Output Directory -->
     <div class="text-subtitle2 text-bold text-primary q-mt-lg">
       SELECT OUTPUT DIRECTORY
@@ -132,25 +108,26 @@
       </div>
     </div>
 
-    <!-- Confirm Songs Switch -->
-    <div class="text-subtitle2 text-bold text-primary q-mt-xl">
-      CONFIRMATION
-    </div>
-    <div class="row justify-center" style="max-width: 550px; margin: auto">
-      <q-toggle
-        v-model="confirmBeforeDownload"
-        label="Confirm Songs Before Download"
-        class="q-mt-md"
+    <!-- Query URL Button -->
+    <div
+      class="row justify-center q-mt-md"
+      style="max-width: 550px; margin: auto"
+    >
+      <q-btn
+        color="secondary"
+        label="Query URL"
+        :disable="!url"
+        @click="queryUrl"
+        push
+        class="q-mb-lg"
       />
       <q-icon
         name="mdi-help-circle-outline text-grey-6"
         class="q-pt-md q-mx-sm"
       >
         <q-tooltip>
-          Highly recommended to keep enabled as song extraction may not always
-          be accurate, especially for YouTube and SoundCloud. For Spotify, while
-          more reliable, it's still good practice to verify the correct URL was
-          provided.
+          Query the URL to find songs before downloading. This will analyze the
+          content and show you what songs were found.
         </q-tooltip>
       </q-icon>
     </div>
@@ -559,82 +536,112 @@ const isValid = computed(() => {
 
 // Register the song downloader event handler
 $1t.onSongDownloaderEvent = (json: any) => {
+  console.log("==========================================");
+  console.log("EVENT HANDLER TRIGGERED");
+  console.log("Received event:", json);
+  console.log("==========================================");
+
   if (json.context === "sd" && json.path) {
+    console.log("Setting path from context:", json.path);
     config.value.path = json.path;
   }
 
   // Handle analyzeSongs response
-  if (json.action === "analyzeSongs" && json.songs) {
-    foundSongs.value = json.songs.map((song: any) => ({
-      ...song,
-      selected: true,
-      source: determineSongSource(song),
-    }));
+  if (json.action === "analyzeSongs") {
+    console.log("Received analyzeSongs response");
 
-    isQuerying.value = false;
-    $q.loading.hide();
+    if (json.songs) {
+      console.log("Found songs:", json.songs);
 
-    if (foundSongs.value.length === 0) {
-      queryStatus.value = "No songs found.";
-      $q.notify({
-        type: "warning",
-        message: "No songs found with current settings.",
-        position: "top",
-      });
-    } else {
-      // Update status based on URL type
-      if (url.value.includes("youtube.com")) {
-        if (urlPreview.value?.contentType === "Channel") {
-          queryStatus.value = `Found YouTube channel ${urlPreview.value.title}, ${foundSongs.value.length} songs extracted.`;
-        } else if (urlPreview.value?.contentType === "Playlist") {
-          queryStatus.value = `Found YouTube playlist ${urlPreview.value.title}, ${foundSongs.value.length} songs extracted.`;
+      foundSongs.value = json.songs.map((song: any) => ({
+        ...song,
+        selected: true,
+        source: determineSongSource(song),
+      }));
+
+      console.log("Processed songs:", foundSongs.value);
+      isQuerying.value = false;
+      $q.loading.hide();
+
+      if (foundSongs.value.length === 0) {
+        console.log("No songs found");
+        queryStatus.value = "No songs found.";
+        $q.notify({
+          type: "warning",
+          message: "No songs found with current settings.",
+          position: "top",
+        });
+      } else {
+        // Update status based on URL type
+        if (url.value.includes("youtube.com")) {
+          if (urlPreview.value?.contentType === "Channel") {
+            queryStatus.value = `Found YouTube channel ${urlPreview.value.title}, ${foundSongs.value.length} songs extracted.`;
+          } else if (urlPreview.value?.contentType === "Playlist") {
+            queryStatus.value = `Found YouTube playlist ${urlPreview.value.title}, ${foundSongs.value.length} songs extracted.`;
+          } else {
+            queryStatus.value = `Found ${foundSongs.value.length} songs from YouTube.`;
+          }
+        } else if (url.value.includes("spotify.com")) {
+          queryStatus.value = `Found ${foundSongs.value.length} songs from Spotify.`;
+        } else if (url.value.includes("soundcloud.com")) {
+          queryStatus.value = `Found ${foundSongs.value.length} songs from SoundCloud.`;
+        } else if (url.value.includes("1001tracklists.com")) {
+          queryStatus.value = `Found ${foundSongs.value.length} songs from 1001 Tracklists.`;
         } else {
-          queryStatus.value = `Found ${foundSongs.value.length} songs from YouTube.`;
+          queryStatus.value = `Found ${foundSongs.value.length} songs.`;
         }
-      } else if (url.value.includes("spotify.com")) {
-        queryStatus.value = `Found ${foundSongs.value.length} songs from Spotify.`;
-      } else if (url.value.includes("soundcloud.com")) {
-        queryStatus.value = `Found ${foundSongs.value.length} songs from SoundCloud.`;
-      } else if (url.value.includes("1001tracklists.com")) {
-        queryStatus.value = `Found ${foundSongs.value.length} songs from 1001 Tracklists.`;
-      } else {
-        queryStatus.value = `Found ${foundSongs.value.length} songs.`;
-      }
 
+        console.log("Updated status:", queryStatus.value);
+        $q.notify({
+          type: "positive",
+          message: `Found ${foundSongs.value.length} songs.`,
+          position: "top",
+        });
+
+        // If this was triggered from startDownload and confirmation is enabled, show the dialog
+        if (confirmBeforeDownload.value) {
+          console.log("Showing confirmation dialog");
+          showConfirmation.value = true;
+        } else {
+          // If confirmation is disabled, proceed directly to download
+          console.log("Proceeding directly to download");
+          confirmDownload();
+        }
+      }
+    } else if (json.error) {
+      console.error("Error in analyzeSongs response:", json.error);
+      isQuerying.value = false;
+      $q.loading.hide();
+      queryStatus.value = "Error analyzing songs.";
       $q.notify({
-        type: "positive",
-        message: `Found ${foundSongs.value.length} songs.`,
+        type: "negative",
+        message: `Failed to analyze songs: ${json.error}`,
         position: "top",
       });
 
-      // If this was triggered from startDownload and confirmation is enabled, show the dialog
-      if (confirmBeforeDownload.value) {
-        showConfirmation.value = true;
-      } else {
-        // If confirmation is disabled, proceed directly to download
-        confirmDownload();
-      }
+      // Show error in alert for debugging
+      alert(`Error from backend: ${json.error}`);
+    } else {
+      console.error("Unexpected analyzeSongs response format:", json);
+      isQuerying.value = false;
+      $q.loading.hide();
+      queryStatus.value = "Unexpected response from server.";
+      $q.notify({
+        type: "negative",
+        message: "Received unexpected response from server.",
+        position: "top",
+      });
     }
-  }
-
-  // Handle error response
-  if (json.action === "analyzeSongs" && json.error) {
-    isQuerying.value = false;
-    $q.loading.hide();
-    queryStatus.value = "Error analyzing songs.";
-    $q.notify({
-      type: "negative",
-      message: `Failed to analyze songs: ${json.error}`,
-      position: "top",
-    });
   }
 
   // Handle downloadSongs response
   if (json.action === "downloadSongs") {
+    console.log("Received downloadSongs response:", json);
     $q.loading.hide();
 
     if (json.success) {
       const selectedSongs = foundSongs.value.filter((song) => song.selected);
+      console.log("Download successful, selected songs:", selectedSongs.length);
       $q.notify({
         type: "positive",
         message: `${selectedSongs.length} songs downloaded successfully!`,
@@ -647,6 +654,7 @@ $1t.onSongDownloaderEvent = (json: any) => {
         queryStatus.value = "";
       }
     } else {
+      console.error("Download failed:", json.error);
       $q.notify({
         type: "negative",
         message: `Failed to download songs: ${json.error || "Unknown error"}`,
@@ -674,8 +682,15 @@ function browse() {
 
 async function queryUrl() {
   try {
-    // Debug message
+    // Enhanced debug logging
+    console.log("==========================================");
+    console.log("QUERY URL BUTTON PRESSED");
     console.log("queryUrl function called with URL:", url.value);
+    console.log("Current confidence:", shazamConfidence.value);
+    console.log("==========================================");
+
+    // Add an alert to verify the function is being called
+    alert("Query URL button pressed! URL: " + url.value);
 
     // Reset previous results
     foundSongs.value = [];
@@ -687,31 +702,56 @@ async function queryUrl() {
       message: "Analyzing URL and finding songs...",
     });
 
-    // Debug message
+    // Debug message before making the request
+    console.log("==========================================");
+    console.log("ABOUT TO SEND REQUEST");
     console.log("Sending analyzeSongs request with:", {
       url: url.value,
       confidence: shazamConfidence.value,
     });
+    console.log("$1t object:", $1t);
+    console.log("$1t.send function exists:", typeof $1t.send === "function");
+    console.log("==========================================");
 
     // Call the backend to analyze songs
     // The response will be handled by the onSongDownloaderEvent handler
+    console.log("Sending request now...");
     await $1t.send("analyzeSongs", {
       url: url.value,
       confidence: shazamConfidence.value,
     });
+    console.log("Request sent successfully!");
+
+    // Log registered event handlers
+    console.log(
+      "onSongDownloaderEvent handler registered:",
+      $1t.onSongDownloaderEvent !== undefined
+    );
 
     // Note: We don't hide the loading indicator or set isQuerying to false here
     // because that will be handled by the onSongDownloaderEvent handler
-  } catch (error) {
+  } catch (err) {
+    const error = err as Error;
+    console.error("==========================================");
+    console.error("ERROR IN QUERY URL FUNCTION");
     console.error("Error analyzing songs:", error);
+    console.error("Error details:", {
+      message: error.message || String(error),
+      stack: error.stack || "No stack trace available",
+    });
+    console.error("==========================================");
+
     queryStatus.value = "Error analyzing songs.";
     isQuerying.value = false;
     $q.loading.hide();
     $q.notify({
       type: "negative",
-      message: "Failed to analyze songs. Please try again.",
+      message: "Failed to analyze songs: " + (error.message || String(error)),
       position: "top",
     });
+
+    // Show error in alert for debugging
+    alert("Error: " + (error.message || String(error)));
   }
 }
 

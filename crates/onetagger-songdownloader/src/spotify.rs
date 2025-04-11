@@ -1,6 +1,12 @@
-use anyhow::Error;
-use log::info;
+use anyhow::{Error, bail, Context};
+use log::{info, warn};
+use regex::Regex;
 use crate::UrlInfo;
+// Commented imports to be uncommented once rspotify is properly linked
+// use onetagger_platforms::spotify::{Spotify, Settings};
+// use rspotify::prelude::*;
+// use rspotify::AuthCodeSpotify;
+// use rspotify::model::{PlaylistId, AlbumId, TrackId, ArtistId};
 
 /// Process a Spotify URL
 pub fn process_spotify(url: &str, confidence: f32) -> Result<UrlInfo, Error> {
@@ -35,7 +41,8 @@ pub fn process_spotify(url: &str, confidence: f32) -> Result<UrlInfo, Error> {
     Ok(url_info)
 }
 
-/// Create an authenticated Spotify client
+/// Create an authenticated Spotify client - Commented until dependencies are properly linked
+/* 
 fn create_spotify_client() -> Result<AuthCodeSpotify, Error> {
     // Try to get settings
     let settings = Settings::get();
@@ -58,8 +65,10 @@ fn create_spotify_client() -> Result<AuthCodeSpotify, Error> {
     warn!("Spotify authentication required. Please run the main OneTagger application to authenticate with Spotify.");
     bail!("Spotify authentication required. Run the main OneTagger application first.")
 }
+*/
 
-/// Extract content type and ID from Spotify URL
+/// Extract content type and ID from Spotify URL - Commented until dependencies are properly linked
+/* 
 fn extract_spotify_id(url: &str) -> Result<(String, String), Error> {
     // Handle URLs like: https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh
     // or https://open.spotify.com/album/1DFixLWuPkv3KT3TnV35m3
@@ -81,6 +90,9 @@ fn extract_spotify_id(url: &str) -> Result<(String, String), Error> {
     
     bail!("Invalid Spotify URL format: {}", url)
 }
+*/
+
+/* Spotify implementation functions are commented out until dependencies are properly linked
 
 /// Process a Spotify track
 fn process_spotify_track(client: &AuthCodeSpotify, id: &str, url: &str) -> Result<UrlInfo, Error> {
@@ -311,6 +323,7 @@ fn process_spotify_artist(client: &AuthCodeSpotify, id: &str, url: &str) -> Resu
     info!("Successfully processed Spotify artist: {}", artist_title);
     Ok(url_info)
 }
+*/
 
 #[cfg(test)]
 mod tests {

@@ -339,7 +339,7 @@ pub fn generate_output_file(
 }
 
 /// Parse a track string into artist, title, and timestamp
-fn parse_track(track: &str) -> (String, String, Option<String>) {
+pub fn parse_track(track: &str) -> (String, String, Option<String>) {
     // Check if the track is already in the "Artist - Title" format
     if track.contains(" - ") {
         // Extract timestamp if present at the beginning

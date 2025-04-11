@@ -229,18 +229,43 @@ fn process_youtube_video(url: &str, _confidence: f32) -> Result<UrlInfo, Error> 
     // Create videos vector with a single entry
     let videos = vec![(title.clone(), url.to_string(), tracklist)];
     
-    // Create UrlInfo
-    let url_info = UrlInfo::new(
-        "youtube",
-        "video",
-        &title,
-        None
-    )
-    .with_tracklists(tracklists)
-    .with_videos(videos)
-    .with_url(url.to_string());
-    
-    Ok(url_info)
+    // If we didn't find any tracks, create a fallback track from the video title itself
+    if videos.is_empty() || videos[0].2.is_empty() {
+        // Create a fallback track from the video title
+        let fallback_track = title.clone();
+        let mut fallback_tracklist = vec![fallback_track.clone()];
+        let mut fallback_videos = vec![(title.clone(), url.to_string(), fallback_tracklist.clone())];
+        
+        // Update tracklists
+        tracklists.insert(title.clone(), fallback_tracklist);
+        
+        // Create UrlInfo with fallback data
+        info!("No tracks found in video description. Using video title as fallback track.");
+        let url_info = UrlInfo::new(
+            "youtube",
+            "video",
+            &title,
+            None
+        )
+        .with_tracklists(tracklists)
+        .with_videos(fallback_videos)
+        .with_url(url.to_string());
+        
+        Ok(url_info)
+    } else {
+        // Create normal UrlInfo
+        let url_info = UrlInfo::new(
+            "youtube",
+            "video",
+            &title,
+            None
+        )
+        .with_tracklists(tracklists)
+        .with_videos(videos)
+        .with_url(url.to_string());
+        
+        Ok(url_info)
+    }
 }
 
 /// Create a new HTTP client with user agent
@@ -630,6 +655,30 @@ fn process_single_video(client: &Client, url: &str) -> Result<(String, Vec<Strin
                             }
                         }
                     }
+                }
+            }
+            
+            // If still no tracks, create a single track from the title
+            if tracklist.is_empty() {
+                // Try to extract artist and title from the video title
+                if title.contains("-") {
+                    let parts: Vec<&str> = title.split('-').collect();
+                    if parts.len() >= 2 {
+                        let artist = parts[0].trim();
+                        let title_part = parts[1].trim();
+                        
+                        if !artist.is_empty() && !title_part.is_empty() {
+                            let track = format!("{} - {}", artist, title_part);
+                            println!("Created track from video title: {}", track);
+                            tracklist.push(track);
+                        }
+                    }
+                }
+                
+                // If still no track (title didn't contain a dash), use the whole title
+                if tracklist.is_empty() {
+                    println!("Using entire video title as a single track");
+                    tracklist.push(title.clone());
                 }
             }
         }
@@ -1328,7 +1377,7 @@ fn clean_track_text(track: &str) -> String {
     
     // Add back remix information if we found it
     if !remix_info.is_empty() {
-        normalized + &remix_info
+        normalized.clone() + &remix_info
     } else {
         normalized
     }

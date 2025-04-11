@@ -9,7 +9,7 @@ mod spotify;
 mod soundcloud;
 
 pub use query_url::{get_query_url, get_query_url_with_confidence};
-pub use download_songs::{download_songs, generate_output_file, SongInfo};
+pub use download_songs::{download_songs, generate_output_file, SongInfo, parse_track};
 pub use spotify::process_spotify;
 pub use soundcloud::process_soundcloud;
 
