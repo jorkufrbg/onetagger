@@ -5,9 +5,13 @@ use std::path::{Path, PathBuf};
 
 mod query_url;
 mod download_songs;
+mod spotify;
+mod soundcloud;
 
 pub use query_url::{get_query_url, get_query_url_with_confidence};
 pub use download_songs::{download_songs, generate_output_file, SongInfo};
+pub use spotify::process_spotify;
+pub use soundcloud::process_soundcloud;
 
 /// Main struct for the SongDownloader functionality
 pub struct SongDownloader {

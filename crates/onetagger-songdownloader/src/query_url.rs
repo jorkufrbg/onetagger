@@ -45,12 +45,12 @@ pub fn get_query_url_with_confidence(url: &str, confidence: f32) -> Result<UrlIn
             process_youtube_video(url, confidence)
         },
         ("spotify", _) => {
-            println!("Spotify support not yet implemented");
-            bail!("Spotify support not yet implemented")
+            println!("Processing Spotify URL: {}", url);
+            crate::spotify::process_spotify(url, confidence)
         },
         ("soundcloud", _) => {
-            println!("SoundCloud support not yet implemented");
-            bail!("SoundCloud support not yet implemented")
+            println!("Processing SoundCloud URL: {}", url);
+            crate::soundcloud::process_soundcloud(url, confidence)
         },
         _ => {
             println!("Unsupported platform or content type: {}/{}", platform, content_type);
