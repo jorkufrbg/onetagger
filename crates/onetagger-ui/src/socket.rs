@@ -19,7 +19,6 @@ use onetagger_player::{AudioSources, AudioPlayer};
 use onetagger_shared::{Settings, COMMIT};
 use onetagger_playlist::{UIPlaylist, PLAYLIST_EXTENSIONS, get_files_from_playlist_file};
 use onetagger_songdownloader;
-use std::process::Command;
 use std::thread;
 use crossbeam_channel::unbounded;
 use std::env;
