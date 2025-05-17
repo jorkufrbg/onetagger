@@ -3857,11 +3857,15 @@ name = "onetagger-songdownloader"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "csv",
  "html-escape",
  "log",
+ "onetagger-platforms",
+ "onetagger-shared",
  "regex",
  "reqwest 0.11.27",
+ "rustc-serialize",
  "scraper 0.13.0",
  "serde",
  "serde_json",
@@ -5012,6 +5016,12 @@ name = "rustc-hash"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "583034fd73374156e66797ed8e5b0d5690409c9226b22d87cb7f19821c05d152"
+
+[[package]]
+name = "rustc-serialize"
+version = "0.3.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe834bc780604f4674073badbad26d7219cadfb4a2275802db12cbae17498401"
 
 [[package]]
 name = "rustc_version"
